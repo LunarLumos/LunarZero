@@ -90,14 +90,50 @@ async fn connect(
                     }
                 }
             }
-            cmd.stderr(std::process::Stdio::null());
-            let transport =
-                rmcp::transport::TokioChildProcess::new(cmd).map_err(|e| format!("spawn failed: {e}"))?;
-            let client = tokio::time::timeout(timeout, client_info().serve(transport))
-                .await
-                .map_err(|_| format!("timed out connecting to {name}"))?
-                .map_err(|e| format!("initialize failed: {e}"))?;
-            Ok(client)
+            // capture stderr: servers print banners and tracebacks there, which
+            // must never land on the user's terminal; keep the tail for errors
+            let (transport, stderr) = rmcp::transport::TokioChildProcess::builder(cmd)
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("spawn failed: {e}"))?;
+            let tail: Arc<std::sync::Mutex<std::collections::VecDeque<String>>> =
+                Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+            if let Some(err) = stderr {
+                let tail = tail.clone();
+                let server = name.to_string();
+                tokio::spawn(async move {
+                    use tokio::io::AsyncBufReadExt;
+                    let mut lines = tokio::io::BufReader::new(err).lines();
+                    while let Ok(Some(line)) = lines.next_line().await {
+                        tracing::debug!(mcp = %server, "{line}");
+                        let mut t = tail.lock().unwrap();
+                        if t.len() >= 12 {
+                            t.pop_front();
+                        }
+                        t.push_back(line);
+                    }
+                });
+            }
+            let result = tokio::time::timeout(timeout, client_info().serve(transport)).await;
+            let explain = || {
+                let t = tail.lock().unwrap();
+                // the last meaningful line is usually the real reason (e.g. a Python exception)
+                t.iter()
+                    .rev()
+                    .find(|l| !l.trim().is_empty() && !l.starts_with("  "))
+                    .cloned()
+                    .map(|l| format!(" — {}", l.chars().take(200).collect::<String>()))
+                    .unwrap_or_default()
+            };
+            match result {
+                Err(_) => Err(format!("timed out connecting to {name}{}", explain())),
+                Ok(Err(e)) => {
+                    // give stderr a moment to arrive
+                    tokio::time::sleep(Duration::from_millis(150)).await;
+                    Err(format!("initialize failed: {e}{}", explain()))
+                }
+                Ok(Ok(client)) => Ok(client),
+            }
         }
         McpServerConfig::Remote { url, headers, .. } => {
             let mut config =

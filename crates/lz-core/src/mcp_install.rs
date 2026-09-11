@@ -189,7 +189,7 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
             servers[0]
         ));
     }
-    let (runtime, command, cwd) = detect_and_build(&root, &mut log).await?;
+    let (runtime, command, cwd) = detect_and_build(paths, &root, &mut log).await?;
     let _ = std::fs::write(dir.join(".lz-mcp.json"), serde_json::json!({ "source": parsed.url, "git_ref": parsed.git_ref, "subpath": parsed.subpath, "installed_at": now_ms() }).to_string());
     Ok(McpInstalled {
         name,
@@ -201,69 +201,39 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
     })
 }
 
-fn requires_python(pyproject: &str) -> Option<String> {
-    pyproject.lines().find_map(|l| {
-        let (k, v) = l.split_once('=')?;
-        (k.trim() == "requires-python").then(|| v.trim().trim_matches('"').to_string())
-    })
-}
-
-/// Does `x.y` satisfy a PEP 440-ish `requires-python` (only `>=`, `<`, `~=`, `==` bounds)?
-fn python_ok(version: (u32, u32), spec: &str) -> bool {
-    spec.split(',').all(|part| {
-        let part = part.trim();
-        let parse = |s: &str| -> Option<(u32, u32)> {
-            let mut it = s.trim().split('.');
-            Some((it.next()?.parse().ok()?, it.next().unwrap_or("0").parse().ok()?))
-        };
-        if let Some(v) = part.strip_prefix(">=").and_then(parse) {
-            version >= v
-        } else if let Some(v) = part.strip_prefix("<=").and_then(parse) {
-            version <= v
-        } else if let Some(v) = part.strip_prefix("~=").and_then(parse) {
-            version.0 == v.0 && version.1 >= v.1
-        } else if let Some(v) = part.strip_prefix("==").and_then(parse) {
-            version == v
-        } else if let Some(v) = part.strip_prefix('>').and_then(parse) {
-            version > v
-        } else if let Some(v) = part.strip_prefix('<').and_then(parse) {
-            version < v
-        } else {
-            true
-        }
-    })
-}
-
-/// A Python on PATH that satisfies the project's `requires-python`.
-fn pick_python(pyproject: &str) -> Option<String> {
-    let spec = requires_python(pyproject).unwrap_or_default();
-    let candidates = [
-        "python3.13",
-        "python3.12",
-        "python3.11",
-        "python3.10",
-        "python3.14",
-        "python3",
-    ];
-    for c in candidates {
-        if !on_path(c) {
-            continue;
-        }
-        let out = std::process::Command::new(c)
-            .arg("-c")
-            .arg("import sys;print(sys.version_info[0],sys.version_info[1])")
-            .output()
-            .ok()?;
-        let s = String::from_utf8_lossy(&out.stdout);
-        let mut it = s.split_whitespace();
-        if let (Some(a), Some(b)) = (it.next(), it.next())
-            && let (Ok(a), Ok(b)) = (a.parse::<u32>(), b.parse::<u32>())
-            && (spec.is_empty() || python_ok((a, b), &spec))
-        {
-            return Some(c.to_string());
-        }
+/// `uv` from PATH, or a private copy installed once with pip into
+/// `~/.local/share/lunarzero/tools/` (uv ships as a wheel with a static binary).
+pub async fn ensure_uv(paths: &Paths, log: &mut Vec<String>) -> Result<String, String> {
+    if on_path("uv") {
+        return Ok("uv".into());
     }
-    None
+    let tools = paths.data.join("tools");
+    let private = tools.join("venv/bin/uv");
+    if private.is_file() {
+        return Ok(private.display().to_string());
+    }
+    let python = ["python3", "python3.13", "python3.12", "python3.11"]
+        .into_iter()
+        .find(|p| on_path(p))
+        .ok_or(
+            "Python servers need `uv`; install it with `brew install uv` (no python3 found to bootstrap it)",
+        )?;
+    std::fs::create_dir_all(&tools).map_err(|e| e.to_string())?;
+    log.push("bootstrapping a private uv (one-time)".into());
+    run(python, &["-m", "venv", "venv"], &tools, log).await?;
+    let pip = tools.join("venv/bin/pip").display().to_string();
+    run(
+        &pip,
+        &["install", "-q", "--disable-pip-version-check", "uv"],
+        &tools,
+        log,
+    )
+    .await?;
+    if private.is_file() {
+        Ok(private.display().to_string())
+    } else {
+        Err("could not install uv; run `brew install uv` and retry".into())
+    }
 }
 
 fn has_manifest(p: &Path) -> bool {
@@ -292,6 +262,7 @@ fn bundled_servers(root: &Path) -> Option<(String, Vec<String>)> {
 
 /// Look at the project files, build, and return (runtime, command, cwd).
 async fn detect_and_build(
+    paths: &Paths,
     root: &Path,
     log: &mut Vec<String>,
 ) -> Result<(String, Vec<String>, PathBuf), String> {
@@ -356,7 +327,9 @@ async fn detect_and_build(
             root.to_path_buf(),
         ));
     }
-    // Python
+    // Python — always through uv (bootstrapped privately when missing): it
+    // honours uv.lock, picks a Python that satisfies requires-python, and
+    // keeps every server in its own environment
     let pyproject = root.join("pyproject.toml");
     if pyproject.exists() {
         let text = std::fs::read_to_string(&pyproject).unwrap_or_default();
@@ -370,64 +343,46 @@ async fn detect_and_build(
             })
             .and_then(|l| l.split('=').next())
             .map(|s| s.trim().trim_matches('"').to_string());
-        if on_path("uv") {
-            run("uv", &["sync"], root, log).await.ok();
-            let cmd = match &script {
-                Some(s) => vec![
-                    "uv".to_string(),
+        let uv = ensure_uv(paths, log).await?;
+        let mut sync_args = vec!["sync".to_string()];
+        if !root.join("uv.lock").exists() {
+            sync_args.push("--no-dev".into());
+        }
+        let sync_ref: Vec<&str> = sync_args.iter().map(String::as_str).collect();
+        run(&uv, &sync_ref, root, log).await?;
+        let cmd = match &script {
+            Some(s) => vec![
+                uv.clone(),
+                "run".into(),
+                "--directory".into(),
+                root.display().to_string(),
+                s.clone(),
+            ],
+            None => {
+                let module = root
+                    .join("src")
+                    .read_dir()
+                    .ok()
+                    .and_then(|rd| {
+                        rd.flatten()
+                            .find(|e| {
+                                e.path().is_dir() && !e.file_name().to_string_lossy().ends_with(".egg-info")
+                            })
+                            .map(|e| e.file_name().to_string_lossy().to_string())
+                    })
+                    .unwrap_or_else(|| "server".into());
+                vec![
+                    uv.clone(),
                     "run".into(),
                     "--directory".into(),
                     root.display().to_string(),
-                    s.clone(),
-                ],
-                None => {
-                    let module = root
-                        .join("src")
-                        .read_dir()
-                        .ok()
-                        .and_then(|rd| {
-                            rd.flatten()
-                                .find(|e| {
-                                    e.path().is_dir()
-                                        && !e.file_name().to_string_lossy().ends_with(".egg-info")
-                                })
-                                .map(|e| e.file_name().to_string_lossy().to_string())
-                        })
-                        .unwrap_or_else(|| "server".into());
-                    vec![
-                        "uv".to_string(),
-                        "run".into(),
-                        "--directory".into(),
-                        root.display().to_string(),
-                        "python".into(),
-                        "-m".into(),
-                        module,
-                    ]
-                }
-            };
-            return Ok(("python (uv)".into(), cmd, root.to_path_buf()));
-        }
-        if let Some(python) = pick_python(&text) {
-            log.push(format!("using {python}"));
-            run(&python, &["-m", "venv", ".venv"], root, log).await?;
-            let pip = root.join(".venv/bin/pip").display().to_string();
-            run(&pip, &["install", "-q", "-e", "."], root, log).await?;
-            let cmd = match &script {
-                Some(s) => vec![root.join(".venv/bin").join(s).display().to_string()],
-                None => vec![
-                    root.join(".venv/bin/python").display().to_string(),
+                    "python".into(),
                     "-m".into(),
-                    "server".into(),
-                ],
-            };
-            return Ok(("python (venv)".into(), cmd, root.to_path_buf()));
-        }
-        return Err(format!(
-            "this server needs Python{}: install uv (`brew install uv` / https://docs.astral.sh/uv/) which fetches the right version automatically",
-            requires_python(&text)
-                .map(|r| format!(" {r}"))
-                .unwrap_or_default()
-        ));
+                    module,
+                ]
+            }
+        };
+        return Ok(("python (uv)".into(), cmd, root.to_path_buf()));
     }
     // Rust
     if root.join("Cargo.toml").exists() {
@@ -515,18 +470,6 @@ pub fn config_file(paths: &Paths, directory: &Path, global: bool) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn python_constraints() {
-        assert!(python_ok((3, 12), ">=3.12, <3.13"));
-        assert!(!python_ok((3, 14), ">=3.12,<3.13"));
-        assert!(python_ok((3, 11), ">=3.10"));
-        assert!(python_ok((3, 12), "~=3.12"));
-        assert_eq!(
-            requires_python("[project]\nrequires-python = \">=3.10\"\n").as_deref(),
-            Some(">=3.10")
-        );
-    }
 
     #[test]
     fn names() {
