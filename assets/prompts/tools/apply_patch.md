@@ -1,13 +1,8 @@
-Apply a multi-file patch in the `*** Begin Patch` / `*** End Patch` format:
-
+Apply a multi-file patch:
 *** Begin Patch
-*** Update File: path/to/file
-@@ optional context line
--removed line
-+added line
-*** Add File: path/to/new
-+content
-*** Delete File: path/to/old
+*** Update File: path   (or Add File / Delete File; `*** Move to: new` renames)
+@@ context
+-removed
++added
 *** End Patch
-
-Context lines start with a space, removed with `-`, added with `+`; `*** Move to: new/path` after `Update File` renames. Every hunk must match the current file exactly.
+Context lines start with a space; hunks must match the file exactly.

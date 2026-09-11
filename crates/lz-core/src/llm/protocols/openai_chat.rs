@@ -62,7 +62,7 @@ fn lower_user(content: &[ContentPart]) -> Result<Value, LlmError> {
     Ok(json!({ "role": "user", "content": items }))
 }
 
-fn lower_assistant(content: &[ContentPart]) -> Result<Value, LlmError> {
+fn lower_assistant(content: &[ContentPart], send_reasoning: bool) -> Result<Value, LlmError> {
     let mut text = String::new();
     let mut reasoning = String::new();
     let mut tool_calls = Vec::new();
@@ -96,7 +96,9 @@ fn lower_assistant(content: &[ContentPart]) -> Result<Value, LlmError> {
     if !tool_calls.is_empty() {
         m.insert("tool_calls".into(), Value::Array(tool_calls));
     }
-    if !reasoning.is_empty() {
+    // Replaying reasoning costs tokens on every later request and several
+    // providers reject it; only send it when the model opts in.
+    if send_reasoning && !reasoning.is_empty() {
         m.insert("reasoning_content".into(), Value::String(reasoning));
     }
     Ok(Value::Object(m))
@@ -136,6 +138,12 @@ fn lower_tool(content: &[ContentPart]) -> Result<(Vec<Value>, Vec<Value>), LlmEr
 }
 
 fn lower_messages(req: &LlmRequest) -> Result<Vec<Value>, LlmError> {
+    let send_reasoning = req
+        .provider_options
+        .get("openai")
+        .and_then(|o| o.get("sendReasoning"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let mut out = Vec::new();
     if !req.system.is_empty() {
         let text = req
@@ -186,7 +194,7 @@ fn lower_messages(req: &LlmRequest) -> Result<Vec<Value>, LlmError> {
                 if !pending_images.is_empty() {
                     out.push(json!({ "role": "user", "content": std::mem::take(&mut pending_images) }));
                 }
-                out.push(lower_assistant(content)?);
+                out.push(lower_assistant(content, send_reasoning)?);
             }
         }
     }

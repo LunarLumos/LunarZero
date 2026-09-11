@@ -87,7 +87,13 @@ impl ToolRegistry {
             if permission::evaluate(key, "*", &[ruleset]).action == Action::Deny {
                 continue;
             }
-            let schema = crate::provider::transform::sanitize_schema(&tool.parameters());
+            // `invalid` only exists to receive malformed calls; the model never needs to see it
+            if id == "invalid" {
+                continue;
+            }
+            let schema = crate::provider::transform::compact_schema(
+                &crate::provider::transform::sanitize_schema(&tool.parameters()),
+            );
             let description = if id == "task" {
                 super::builtins::task::describe(agents, agent)
             } else {

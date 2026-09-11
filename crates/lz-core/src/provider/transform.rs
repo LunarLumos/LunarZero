@@ -165,6 +165,29 @@ pub fn sanitize_schema(value: &Value) -> Value {
     }
 }
 
+/// Drop schema keywords that cost tokens without changing what the model
+/// sends: `additionalProperties:false` (only meaningful in strict mode, which
+/// we don't request) and empty descriptions.
+pub fn compact_schema(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(compact_schema).collect()),
+        Value::Object(obj) => {
+            let mut out = Map::new();
+            for (k, v) in obj {
+                if k == "additionalProperties" {
+                    continue;
+                }
+                if k == "description" && v.as_str().is_some_and(|d| d.trim().is_empty()) {
+                    continue;
+                }
+                out.insert(k.clone(), compact_schema(v));
+            }
+            Value::Object(out)
+        }
+        other => other.clone(),
+    }
+}
+
 /// System-prompt family used to pick the base prompt file.
 pub fn prompt_family(model: &Model) -> &'static str {
     let id = model.api_id.to_lowercase();

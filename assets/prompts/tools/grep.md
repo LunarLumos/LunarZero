@@ -1,1 +1,1 @@
-Search file contents with a regular expression, optionally limited to a `path` and an `include` glob (`*.ts`, `*.{c,h}`). Returns `path:line: text` matches (max 100), newest files first. Respects .gitignore.
+Regex search over file contents (respects .gitignore); optional path and include glob. Returns `path:line: text`, max 100.

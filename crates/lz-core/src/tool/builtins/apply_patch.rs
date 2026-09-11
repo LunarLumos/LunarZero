@@ -285,7 +285,7 @@ impl Tool for ApplyPatchTool {
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
-            "properties": { "patchText": { "type": "string", "description": "The full patch text that describes all changes to be made" } },
+            "properties": { "patchText": { "type": "string", "description": "Patch text" } },
             "required": ["patchText"]
         })
     }

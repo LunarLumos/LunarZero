@@ -30,13 +30,13 @@ impl Tool for TodoWriteTool {
             "properties": {
                 "todos": {
                     "type": "array",
-                    "description": "The updated todo list",
+                    "description": "Full list",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "content": { "type": "string", "description": "Brief description of the task" },
-                            "status": { "type": "string", "description": "Current status of the task: pending, in_progress, completed, cancelled" },
-                            "priority": { "type": "string", "description": "Priority level of the task: high, medium, low" }
+                            "content": { "type": "string", "description": "Task" },
+                            "status": { "type": "string", "description": "pending | in_progress | completed | cancelled" },
+                            "priority": { "type": "string", "description": "high | medium | low" }
                         },
                         "required": ["content", "status", "priority"]
                     }

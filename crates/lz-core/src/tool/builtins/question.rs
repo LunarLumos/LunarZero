@@ -30,25 +30,25 @@ impl Tool for QuestionTool {
             "properties": {
                 "questions": {
                     "type": "array",
-                    "description": "Questions to ask",
+                    "description": "Questions",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "question": { "type": "string", "description": "Complete question" },
-                            "header": { "type": "string", "description": "Very short label (max 30 chars)" },
+                            "question": { "type": "string", "description": "The question" },
+                            "header": { "type": "string", "description": "Short label" },
                             "options": {
                                 "type": "array",
-                                "description": "Available choices",
+                                "description": "Choices",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "label": { "type": "string", "description": "Display text (1-5 words, concise)" },
-                                        "description": { "type": "string", "description": "Explanation of choice" }
+                                        "label": { "type": "string", "description": "Label" },
+                                        "description": { "type": "string", "description": "One line" }
                                     },
                                     "required": ["label", "description"]
                                 }
                             },
-                            "multiple": { "type": "boolean", "description": "Allow selecting multiple choices" }
+                            "multiple": { "type": "boolean", "description": "Allow several" }
                         },
                         "required": ["question", "header", "options"]
                     }

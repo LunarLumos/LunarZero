@@ -90,9 +90,9 @@ impl Tool for WebFetchTool {
         json!({
             "type": "object",
             "properties": {
-                "url": { "type": "string", "description": "The URL to fetch content from" },
-                "format": { "type": "string", "enum": ["text", "markdown", "html"], "description": "The format to return the content in (text, markdown, or html). Defaults to markdown." },
-                "timeout": { "type": "integer", "description": "Optional timeout in seconds (max 120)" }
+                "url": { "type": "string", "description": "URL" },
+                "format": { "type": "string", "enum": ["text", "markdown", "html"], "description": "text | markdown (default) | html" },
+                "timeout": { "type": "integer", "description": "Timeout s (max 120)" }
             },
             "required": ["url"]
         })

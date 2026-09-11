@@ -14,8 +14,6 @@ use crate::llm::types::*;
 use crate::provider::Model;
 use crate::storage::now_ms;
 
-pub const PRUNE_MINIMUM: u64 = 20_000;
-pub const PRUNE_PROTECT: u64 = 40_000;
 const TOOL_OUTPUT_MAX_CHARS: usize = 2_000;
 const PRUNE_PROTECTED_TOOLS: &[&str] = &["skill"];
 const MIN_PRESERVE_RECENT_TOKENS: u64 = 2_000;
@@ -614,12 +612,14 @@ pub async fn process(
     Ok(Outcome::Stop)
 }
 
-/// Clear old tool outputs once more than `PRUNE_PROTECT` tokens of newer
-/// outputs exist and at least `PRUNE_MINIMUM` would be freed.
+/// Clear old tool outputs once more than `prune_after_tokens` of newer
+/// outputs exist and at least `prune_min_tokens` would be freed.
 pub async fn prune(engine: &Engine, session_id: &str) -> anyhow::Result<()> {
-    if !engine.config().compaction_prune() {
+    let config = engine.config();
+    if !config.compaction_prune() {
         return Ok(());
     }
+    let (protect, minimum) = (config.prune_after_tokens(), config.prune_min_tokens());
     let msgs = engine.sessions.messages(session_id, None, None).await?;
     let mut total = 0u64;
     let mut pruned = 0u64;
@@ -652,14 +652,14 @@ pub async fn prune(engine: &Engine, session_id: &str) -> anyhow::Result<()> {
             }
             let est = (output.len() as u64).div_ceil(4);
             total += est;
-            if total <= PRUNE_PROTECT {
+            if total <= protect {
                 continue;
             }
             pruned += est;
             to_prune.push(p.clone());
         }
     }
-    if pruned > PRUNE_MINIMUM {
+    if pruned > minimum {
         for mut p in to_prune {
             if let PartKind::Tool {
                 state: ToolState::Completed { time, .. },

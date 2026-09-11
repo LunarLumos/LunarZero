@@ -59,13 +59,17 @@ pub struct EnvInput<'a> {
 
 pub fn environment(input: EnvInput<'_>) -> String {
     let date = jiff::Zoned::now().strftime("%a %b %d %Y").to_string();
+    let root = if input.directory == input.worktree {
+        String::new()
+    } else {
+        format!("\nroot: {}", input.worktree.display())
+    };
     format!(
-        "You are powered by the model named {}. The exact model ID is {}/{}\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: {}\n  Workspace root folder: {}\n  Is directory a git repo: {}\n  Platform: {}\n  Today's date: {}\n</env>",
-        input.model.api_id,
+        "<env>\nmodel: {}/{}\ncwd: {}{}\ngit: {}\nos: {}\ndate: {}\n</env>",
         input.model.provider_id,
         input.model.api_id,
         input.directory.display(),
-        input.worktree.display(),
+        root,
         if input.is_git { "yes" } else { "no" },
         std::env::consts::OS,
         date

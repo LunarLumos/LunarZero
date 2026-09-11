@@ -26,7 +26,7 @@ impl Tool for SkillTool {
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
-            "properties": { "name": { "type": "string", "description": "The name of the skill from available_skills" } },
+            "properties": { "name": { "type": "string", "description": "Skill name" } },
             "required": ["name"]
         })
     }

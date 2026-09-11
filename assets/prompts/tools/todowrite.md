@@ -1,1 +1,1 @@
-Replace the session's task list. Use it for work with several steps so the user can follow progress: mark a task `in_progress` when you start it (one at a time) and `completed` as soon as it is done. Skip it for single-step requests.
+Replace the task list for multi-step work. One task `in_progress` at a time; mark `completed` promptly. Skip for single-step requests.

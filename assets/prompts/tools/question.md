@@ -1,1 +1,1 @@
-Ask the user one or more questions and wait for the answers. Give each question a short `header`, 2–4 concrete `options` with a one-line description, and set `multiple` when several may apply; the user can always type their own answer. Use it only when the answer changes what you will do.
+Ask the user and wait. Each question: short header, 2–4 options with one-line descriptions, `multiple` if several may apply; the user can also type their own answer. Only when the answer changes what you will do.

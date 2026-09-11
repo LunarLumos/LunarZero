@@ -292,9 +292,9 @@ impl Tool for BashTool {
         json!({
             "type": "object",
             "properties": {
-                "command": { "type": "string", "description": "The command to execute" },
-                "timeout": { "type": "integer", "description": "Optional timeout in milliseconds" },
-                "workdir": { "type": "string", "description": "The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands." }
+                "command": { "type": "string", "description": "Shell command" },
+                "timeout": { "type": "integer", "description": "Timeout ms" },
+                "workdir": { "type": "string", "description": "Working directory (instead of cd)" }
             },
             "required": ["command"]
         })

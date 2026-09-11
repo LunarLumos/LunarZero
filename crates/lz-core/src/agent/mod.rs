@@ -160,7 +160,7 @@ pub fn build(raw_config: &Map<String, Value>, paths: &Paths, worktree: &Path) ->
         mk(
             "general",
             AgentMode::Subagent,
-            Some("General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."),
+            Some("Multi-step work with all tools; good for parallel independent tasks."),
             None,
             json!({ "todowrite": "deny" }),
         ),
@@ -170,7 +170,7 @@ pub fn build(raw_config: &Map<String, Value>, paths: &Paths, worktree: &Path) ->
         mk(
             "explore",
             AgentMode::Subagent,
-            Some("Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. \"src/components/**/*.tsx\"), search code for keywords (eg. \"API endpoints\"), or answer questions about the codebase (eg. \"how do API endpoints work?\"). When calling this agent, specify the desired thoroughness level: \"quick\" for basic searches, \"medium\" for moderate exploration, or \"very thorough\" for comprehensive analysis across multiple locations and naming conventions."),
+            Some("Read-only codebase research: find files, search code, answer questions; say how thorough."),
             Some(PROMPT_EXPLORE),
             json!({
                 "*": "deny", "grep": "allow", "glob": "allow", "list": "allow", "bash": "allow",

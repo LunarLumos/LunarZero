@@ -161,8 +161,8 @@ impl Tool for GlobTool {
         json!({
             "type": "object",
             "properties": {
-                "pattern": { "type": "string", "description": "The glob pattern to match files against" },
-                "path": { "type": "string", "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter \"undefined\" or \"null\" - simply omit it for the default behavior. Must be a valid directory path if provided." }
+                "pattern": { "type": "string", "description": "Glob, e.g. **/*.rs" },
+                "path": { "type": "string", "description": "Directory (default: cwd)" }
             },
             "required": ["pattern"]
         })
@@ -245,9 +245,9 @@ impl Tool for GrepTool {
         json!({
             "type": "object",
             "properties": {
-                "pattern": { "type": "string", "description": "The regex pattern to search for in file contents" },
-                "path": { "type": "string", "description": "The directory to search in. Defaults to the current working directory." },
-                "include": { "type": "string", "description": "File pattern to include in the search (e.g. \"*.js\", \"*.{ts,tsx}\")" }
+                "pattern": { "type": "string", "description": "Regex" },
+                "path": { "type": "string", "description": "Directory (default: cwd)" },
+                "include": { "type": "string", "description": "File glob, e.g. *.{ts,tsx}" }
             },
             "required": ["pattern"]
         })

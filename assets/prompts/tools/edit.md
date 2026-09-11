@@ -1,1 +1,1 @@
-Replace text in a file. `oldString` must match the file exactly (indentation included) and appear once, unless `replaceAll` is true. Read the file first so the match is precise; include a few surrounding lines when the snippet is not unique. Keep the file's existing style and line endings.
+Replace text in a file. `oldString` must match exactly (indentation included) and be unique unless `replaceAll`; read the file first and include surrounding lines when needed.

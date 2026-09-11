@@ -269,9 +269,9 @@ impl Tool for ReadTool {
         json!({
             "type": "object",
             "properties": {
-                "filePath": { "type": "string", "description": "The absolute path to the file or directory to read" },
-                "offset": { "type": "integer", "description": "The line number to start reading from (1-indexed)" },
-                "limit": { "type": "integer", "description": "The maximum number of lines to read (defaults to 2000)" }
+                "filePath": { "type": "string", "description": "Absolute path" },
+                "offset": { "type": "integer", "description": "First line (1-based)" },
+                "limit": { "type": "integer", "description": "Max lines (default 2000)" }
             },
             "required": ["filePath"]
         })

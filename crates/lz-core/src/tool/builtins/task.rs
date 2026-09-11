@@ -79,10 +79,7 @@ pub fn describe(agents: &crate::agent::Agents, agent: &Agent) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    format!(
-        "{}\nAvailable agent types and the tools they have access to:\n{list}",
-        crate::tool_description!("task")
-    )
+    format!("{}\nAgents:\n{list}", crate::tool_description!("task").trim_end())
 }
 
 #[async_trait]
@@ -97,11 +94,10 @@ impl Tool for TaskTool {
         json!({
             "type": "object",
             "properties": {
-                "description": { "type": "string", "description": "A short (3-5 words) description of the task" },
-                "prompt": { "type": "string", "description": "The task for the agent to perform" },
-                "subagent_type": { "type": "string", "description": "The type of specialized agent to use for this task" },
-                "task_id": { "type": "string", "description": "This should only be set if you mean to resume a previous task (you can pass a prior task_id and the task will continue the same subagent session as before instead of creating a fresh one)" },
-                "command": { "type": "string", "description": "The command that triggered this task" }
+                "description": { "type": "string", "description": "3-5 word label" },
+                "prompt": { "type": "string", "description": "Complete instructions" },
+                "subagent_type": { "type": "string", "description": "Agent name" },
+                "task_id": { "type": "string", "description": "Resume this earlier task" }
             },
             "required": ["description", "prompt", "subagent_type"]
         })

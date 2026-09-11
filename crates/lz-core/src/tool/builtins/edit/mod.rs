@@ -172,10 +172,10 @@ impl Tool for EditTool {
         json!({
             "type": "object",
             "properties": {
-                "filePath": { "type": "string", "description": "The absolute path to the file to modify" },
-                "oldString": { "type": "string", "description": "The text to replace" },
-                "newString": { "type": "string", "description": "The text to replace it with (must be different from oldString)" },
-                "replaceAll": { "type": "boolean", "description": "Replace all occurrences of oldString (default false)" }
+                "filePath": { "type": "string", "description": "Absolute path" },
+                "oldString": { "type": "string", "description": "Exact text to find" },
+                "newString": { "type": "string", "description": "Replacement" },
+                "replaceAll": { "type": "boolean", "description": "Replace every match" }
             },
             "required": ["filePath", "oldString", "newString"]
         })
@@ -313,8 +313,8 @@ impl Tool for WriteTool {
         json!({
             "type": "object",
             "properties": {
-                "filePath": { "type": "string", "description": "The absolute path to the file to write (must be absolute, not relative)" },
-                "content": { "type": "string", "description": "The content to write to the file" }
+                "filePath": { "type": "string", "description": "Absolute path" },
+                "content": { "type": "string", "description": "Full file content" }
             },
             "required": ["filePath", "content"]
         })

@@ -362,6 +362,13 @@ pub struct CompactionConfig {
     pub preserve_recent_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reserved: Option<u64>,
+    /// Old tool outputs are dropped from the context once more than this many
+    /// tokens of newer outputs exist (default 24000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prune_after_tokens: Option<u64>,
+    /// …and only when at least this many tokens would be freed (default 6000).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prune_min_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
@@ -472,7 +479,19 @@ impl Config {
         self.compaction.as_ref().and_then(|c| c.auto).unwrap_or(true)
     }
     pub fn compaction_prune(&self) -> bool {
-        self.compaction.as_ref().and_then(|c| c.prune).unwrap_or(false)
+        self.compaction.as_ref().and_then(|c| c.prune).unwrap_or(true)
+    }
+    pub fn prune_after_tokens(&self) -> u64 {
+        self.compaction
+            .as_ref()
+            .and_then(|c| c.prune_after_tokens)
+            .unwrap_or(24_000)
+    }
+    pub fn prune_min_tokens(&self) -> u64 {
+        self.compaction
+            .as_ref()
+            .and_then(|c| c.prune_min_tokens)
+            .unwrap_or(6_000)
     }
     pub fn snapshot_enabled(&self) -> bool {
         self.snapshot.unwrap_or(true)
