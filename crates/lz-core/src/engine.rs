@@ -505,7 +505,8 @@ impl Engine {
 
     /// Resolve a possibly-relative path against the project directory.
     pub fn resolve_path(&self, p: &str) -> PathBuf {
-        let expanded = crate::paths::expand_home(p, &self.paths.home);
+        let cleaned = crate::paths::normalize_model_path(p);
+        let expanded = crate::paths::expand_home(&cleaned, &self.paths.home);
         if expanded.is_absolute() {
             expanded
         } else {

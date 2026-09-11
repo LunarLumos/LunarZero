@@ -169,12 +169,64 @@ pub struct ToModelOptions {
 }
 
 /// Project stored history into neutral LLM messages.
+/// Tool-call arguments that are big and already on disk (`write` content,
+/// `edit` strings, `apply_patch` text) are replaced by a short stub for calls
+/// older than the last three model steps: the file is the source of truth and
+/// the model can `read` it. This is what keeps a long build session from
+/// re-sending every file it ever wrote on every step.
+fn compact_tool_input(tool: &str, input: &serde_json::Value) -> serde_json::Value {
+    let mut v = input.clone();
+    let stub = |s: &str| {
+        serde_json::Value::String(format!(
+            "<{} lines, {} chars — on disk>",
+            s.lines().count(),
+            s.len()
+        ))
+    };
+    if let Some(obj) = v.as_object_mut() {
+        match tool {
+            "write" => {
+                if let Some(serde_json::Value::String(c)) = obj.get("content").cloned() {
+                    obj.insert("content".into(), stub(&c));
+                }
+            }
+            "edit" => {
+                for k in ["oldString", "newString"] {
+                    if let Some(serde_json::Value::String(c)) = obj.get(k).cloned()
+                        && c.len() > 200
+                    {
+                        obj.insert(k.into(), stub(&c));
+                    }
+                }
+            }
+            "apply_patch" => {
+                if let Some(serde_json::Value::String(c)) = obj.get("patchText").cloned() {
+                    obj.insert("patchText".into(), stub(&c));
+                }
+            }
+            _ => {}
+        }
+    }
+    v
+}
+
 pub fn to_llm_messages(msgs: &[MessageWithParts], opts: &ToModelOptions) -> Vec<LlmMessage> {
     let mut out: Vec<LlmMessage> = Vec::new();
-    for m in msgs {
+    // index of the user message that starts the second-to-last turn; tool
+    // inputs before it are compacted
+    // tool inputs before the last three assistant steps are compacted
+    let assistant_positions: Vec<usize> = msgs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| matches!(m.info, Message::Assistant(_)))
+        .map(|(i, _)| i)
+        .collect();
+    let recent_from = assistant_positions.iter().rev().nth(2).copied().unwrap_or(0);
+    for (mi, m) in msgs.iter().enumerate() {
         if m.parts.is_empty() {
             continue;
         }
+        let old_turn = mi < recent_from;
         match &m.info {
             Message::User(_) => {
                 let mut content = Vec::new();
@@ -264,7 +316,11 @@ pub fn to_llm_messages(msgs: &[MessageWithParts], opts: &ToModelOptions) -> Vec<
                             assistant.push(ContentPart::ToolCall {
                                 id: call_id.clone(),
                                 name: tool.clone(),
-                                input: state.input().clone(),
+                                input: if old_turn {
+                                    compact_tool_input(tool, state.input())
+                                } else {
+                                    state.input().clone()
+                                },
                             });
                             let result = match state {
                                 ToolState::Completed {

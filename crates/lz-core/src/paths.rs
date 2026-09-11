@@ -123,6 +123,50 @@ impl Paths {
 }
 
 /// Expand a leading `~` or `$HOME`.
+/// Models often hand us shell-escaped or slightly mangled paths
+/// (`app/\(dashboard\)/\[id\)/page.tsx`, quotes, `./`). Undo the escaping
+/// and repair an obviously mismatched bracket so files land where intended
+/// instead of in a directory literally named `\(dashboard\)`.
+pub fn normalize_model_path(p: &str) -> String {
+    let mut s = p.trim().to_string();
+    if (s.starts_with('"') && s.ends_with('"') || s.starts_with('\'') && s.ends_with('\'')) && s.len() >= 2 {
+        s = s[1..s.len() - 1].to_string();
+    }
+    // unescape backslash-escaped punctuation and spaces
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&n) = chars.peek()
+            && matches!(
+                n,
+                '(' | ')' | '[' | ']' | '{' | '}' | ' ' | '$' | '&' | '\'' | '"' | '@' | '!'
+            )
+        {
+            out.push(n);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    // repair segments like `[id)` / `(group]` (a paired opener with the wrong closer)
+    let fixed: Vec<String> = out
+        .split('/')
+        .map(|seg| {
+            let b = seg.as_bytes();
+            if b.len() >= 2 {
+                match (b[0], b[b.len() - 1]) {
+                    (b'[', b')') => return format!("{}]", &seg[..seg.len() - 1]),
+                    (b'(', b']') => return format!("{})", &seg[..seg.len() - 1]),
+                    _ => {}
+                }
+            }
+            seg.to_string()
+        })
+        .collect();
+    fixed.join("/")
+}
+
 pub fn expand_home(p: &str, home: &Path) -> PathBuf {
     if let Some(rest) = p.strip_prefix("~/") {
         home.join(rest)
@@ -132,5 +176,24 @@ pub fn expand_home(p: &str, home: &Path) -> PathBuf {
         home.join(rest)
     } else {
         PathBuf::from(p)
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[test]
+    fn unescapes_and_repairs_model_paths() {
+        assert_eq!(
+            normalize_model_path("app/\\(dashboard\\)/project/\\[id\\)/page.tsx"),
+            "app/(dashboard)/project/[id]/page.tsx"
+        );
+        assert_eq!(normalize_model_path("\"src/my file.rs\""), "src/my file.rs");
+        assert_eq!(
+            normalize_model_path("app/api/auth/[...nextauth]/route.ts"),
+            "app/api/auth/[...nextauth]/route.ts"
+        );
+        assert_eq!(normalize_model_path("src\\ dir/x.py"), "src dir/x.py");
     }
 }
