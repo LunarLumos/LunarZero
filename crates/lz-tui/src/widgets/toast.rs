@@ -52,19 +52,22 @@ impl Toasts {
         self.items.retain(|t| t.until > now);
         before != self.items.len()
     }
+    /// Notifications stack upward from the bottom of `area` — the sidebar
+    /// column, or a narrow strip at the right edge when there is no sidebar —
+    /// so they never cover the transcript.
     pub fn render(&self, f: &mut Frame, area: Rect, theme: &Theme) {
-        let mut y = area.y + 1;
-        for t in &self.items {
-            let w = (t.text.chars().count() as u16 + 4)
-                .min(area.width.saturating_sub(2))
-                .max(10);
+        let mut bottom = area.y + area.height;
+        for t in self.items.iter().rev() {
+            let w = area.width.saturating_sub(2).max(10);
             let wrapped = textwrap::wrap(&t.text, w.saturating_sub(4) as usize);
             let h = wrapped.len() as u16 + 2;
-            if y + h > area.y + area.height {
+            if bottom < area.y + h {
                 break;
             }
+            let y = bottom - h;
+            bottom = y;
             let rect = Rect {
-                x: area.x + area.width.saturating_sub(w + 1),
+                x: area.x + 1,
                 y,
                 width: w,
                 height: h,
@@ -96,7 +99,6 @@ impl Toasts {
                 })
                 .collect();
             f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
-            y += h;
         }
     }
 }

@@ -723,6 +723,17 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
             worktree: &engine.project.worktree,
             is_git: engine.project.vcs.is_some(),
         })];
+        {
+            let cfg = engine.config();
+            let pm = cfg.project_map.clone().unwrap_or_default();
+            if pm.enabled.unwrap_or(true) {
+                rest.push(
+                    engine
+                        .project_map
+                        .get(&engine.project.worktree, pm.max_chars.unwrap_or(1500)),
+                );
+            }
+        }
         rest.extend(engine.instructions().await);
         if let Some(mcp) = engine.mcp_instructions(&ruleset).await {
             rest.push(mcp);

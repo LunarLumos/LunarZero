@@ -143,6 +143,8 @@ pub struct App {
     booted: bool,
     scroll_speed: u16,
     pub area: Rect,
+    /// Right-hand column used for notifications (sidebar when shown).
+    notify_area: Option<Rect>,
 }
 
 const SLASH: &[(&str, &str)] = &[
@@ -261,6 +263,7 @@ impl App {
             booted: false,
             scroll_speed: opts.tui.scroll_speed.unwrap_or(3).max(1),
             area: Rect::default(),
+            notify_area: None,
         }
     }
 
@@ -2859,7 +2862,14 @@ impl App {
                 Dialog::Text(d) => d.render(f, area, theme),
             }
         }
-        self.toasts.render(f, area, &self.theme);
+        // notifications live in the right column, never over the transcript
+        let strip = self.notify_area.unwrap_or(Rect {
+            x: area.x + area.width.saturating_sub(42),
+            y: area.y,
+            width: 42.min(area.width),
+            height: area.height.saturating_sub(4),
+        });
+        self.toasts.render(f, strip, &self.theme);
         if self.leader.is_some() {
             let hint = "leader… (n new · l sessions · m models · a agents · t themes · b sidebar · c compact · u undo · r redo · e editor · x export · ? help · q quit)";
             let w = (hint.chars().count() as u16 + 2).min(area.width);
@@ -2904,6 +2914,17 @@ impl App {
             Constraint::Length(if show_sidebar { 36 } else { 0 }),
         ])
         .areas(area);
+        self.notify_area = if show_sidebar {
+            // below the sidebar's own content: bottom half of the column
+            Some(Rect {
+                x: side.x,
+                y: side.y + side.height / 2,
+                width: side.width,
+                height: side.height - side.height / 2,
+            })
+        } else {
+            None
+        };
         let bottom_h = self.bottom_height(sid, main.width, area.height.saturating_sub(3));
         let [list_area, bottom] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(bottom_h)]).areas(main);
@@ -3055,6 +3076,7 @@ impl App {
     }
 
     fn view_home(&mut self, f: &mut Frame, area: Rect) {
+        self.notify_area = None;
         let prompt_h = self.prompt.height(area.width.min(100)) + 2;
         let logo: Vec<&str> = vec![
             "██╗     ██╗   ██╗███╗   ██╗ █████╗ ██████╗ ",

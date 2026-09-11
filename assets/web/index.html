@@ -408,7 +408,7 @@ $('#pool-all').onchange = pool;
 $('#pool-reset').onclick = async () => { await api('/pool/reset', { method: 'POST' }); toast('Cooldowns cleared'); pool(); };
 
 // ───────── settings ─────────
-const THEMES = ['lunar','system','ayu','catppuccin','dracula','everforest','github','gruvbox','kanagawa','mono','monokai','night-owl','nord','one-dark','rose-pine','solarized','tokyonight','zenburn'];
+const THEMES = ['lunar','hacker','system','ayu','catppuccin','dracula','everforest','github','gruvbox','kanagawa','mono','monokai','night-owl','nord','one-dark','rose-pine','solarized','tokyonight','zenburn'];
 let cfgState = null;
 const parseJsonc = t => { try { return JSON.parse(t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/mg, '').replace(/,(\s*[}\]])/g, '$1') || '{}'); } catch { return null; } };
 async function settings() {

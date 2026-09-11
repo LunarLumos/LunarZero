@@ -14,6 +14,7 @@ pub mod mcp_install;
 pub mod paths;
 pub mod permission;
 pub mod project;
+pub mod project_map;
 pub mod provider;
 pub mod question;
 pub mod recommended;

@@ -330,6 +330,14 @@ pub struct ToolOutputConfig {
     pub max_bytes: Option<usize>,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct ProjectMapConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_chars: Option<usize>,
+}
+
 /// `pool`: the built-in router over free-tier providers (`lunar/auto`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct PoolConfig {
@@ -454,6 +462,9 @@ pub struct Config {
     pub compaction: Option<CompactionConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<PoolConfig>,
+    /// Compact repository map in the system prompt (default on, ~1.5k chars).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_map: Option<ProjectMapConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experimental: Option<ExperimentalConfig>,
     /// Accepted for compatibility, ignored: `share`, `autoshare`, `autoupdate`,

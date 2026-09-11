@@ -15,12 +15,15 @@ themes, and a router that stacks the free tiers of a dozen model providers into 
 - **Integrations**: MCP servers (local stdio + remote streamable HTTP), LSP diagnostics after
   edits, skills (`SKILL.md`), markdown agents and slash commands.
 - **TUI**: ratatui UI with streaming markdown, syntax highlighting, diffs, tool cards,
-  permission/question panels, sidebar, fuzzy dialogs, 17 palette themes with dark/light
+  permission/question panels, sidebar with notifications kept out of the transcript, fuzzy
+  dialogs, 18 palette themes incl. `lunar` (default) and `hacker` (green/black/red), dark/light
   variants (+ the terminal's own `system` theme), a `ctrl+x` leader keymap, `@file` /
   `/command` autocomplete, `!shell` mode, paste atoms, `$EDITOR` compose.
-- **Token-frugal**: ~1.9k tokens of fixed overhead per request (compact system prompt and tool
-  schemas), reasoning is never replayed into later requests, and stale tool output is pruned
-  from the context early — so small free-tier TPM caps go further.
+- **Token-frugal**: ~2k tokens of fixed overhead per request (compact system prompt and tool
+  schemas), reasoning is never replayed into later requests, stale tool output is pruned from
+  the context early, and a ~80-token **project map** (languages, layout, build/test commands,
+  entry points) rides in the prompt so the model orients itself without exploratory tool calls
+  — each of which would re-send the whole context.
 - **Providers**: any OpenAI-compatible chat API (OpenAI, OpenRouter, Groq, DeepSeek, Ollama,
   LM Studio, …) via the built-in model catalog or a custom `provider` entry.
 

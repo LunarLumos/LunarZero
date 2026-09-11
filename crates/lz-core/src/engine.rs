@@ -56,6 +56,7 @@ pub struct Engine {
     pub lsp: crate::lsp::LspManager,
     /// Free-pool router (usage ledger, cooldowns, `auto` resolution).
     pub router: crate::provider::router::Router,
+    pub project_map: crate::project_map::Cache,
     config: ArcSwap<Config>,
     raw_config: ArcSwap<Map<String, Value>>,
     config_dirs: ArcSwap<Vec<PathBuf>>,
@@ -155,6 +156,7 @@ impl Engine {
             mcp: crate::mcp::McpManager::new(std::time::Duration::from_millis(mcp_timeout)),
             lsp: crate::lsp::LspManager::new(lsp_enabled),
             router: crate::provider::router::Router::new(Some(quota_path)),
+            project_map: crate::project_map::Cache::default(),
             config: ArcSwap::from_pointee(config),
             raw_config: ArcSwap::from_pointee(raw),
             config_dirs: ArcSwap::from_pointee(directories),
