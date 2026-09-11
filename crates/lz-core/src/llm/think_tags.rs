@@ -241,7 +241,7 @@ mod tests {
         let mut f = ThinkTagFilter::default();
         let mut text = String::new();
         let mut reasoning = String::new();
-        let mut collect = |evs: Vec<LlmEvent>, text: &mut String, reasoning: &mut String| {
+        let collect = |evs: Vec<LlmEvent>, text: &mut String, reasoning: &mut String| {
             for e in evs {
                 match e {
                     LlmEvent::TextDelta { text: t, .. } => text.push_str(&t),
