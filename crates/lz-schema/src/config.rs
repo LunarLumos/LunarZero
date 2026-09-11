@@ -330,6 +330,18 @@ pub struct ToolOutputConfig {
     pub max_bytes: Option<usize>,
 }
 
+/// `heal`: when the turn ends right after a build/test command failed, feed
+/// the errors back and let the model fix them without being asked.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct HealConfig {
+    /// Master switch (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Repair rounds per user turn before giving up (default 3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rounds: Option<u32>,
+}
+
 /// `smart`: choose skills, MCP servers and model strategy from the prompt.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct SmartConfig {
@@ -351,6 +363,17 @@ pub struct SmartConfig {
 pub struct ProjectMapConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_chars: Option<usize>,
+}
+
+/// `index`: tree-sitter symbol index (definitions + references) that feeds
+/// the `symbol` tool and the `<symbols>` prompt block.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct IndexConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Character budget of the `<symbols>` block (default 900).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_chars: Option<usize>,
 }
@@ -490,9 +513,15 @@ pub struct Config {
     /// Prompt-aware selection of skills, MCP servers and routing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub smart: Option<SmartConfig>,
+    /// Automatic compile/test-failure repair rounds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heal: Option<HealConfig>,
     /// Compact repository map in the system prompt (default on, ~1.5k chars).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_map: Option<ProjectMapConfig>,
+    /// Tree-sitter symbol index (default on).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<IndexConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub experimental: Option<ExperimentalConfig>,
     /// Accepted for compatibility, ignored: `share`, `autoshare`, `autoupdate`,

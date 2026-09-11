@@ -45,6 +45,12 @@ infer.workspace = true
 htmd.workspace = true
 scraper.workspace = true
 nucleo-matcher.workspace = true
+tree-sitter = "0.25"
+tree-sitter-rust = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-go = "0.25.0"
 
 [dev-dependencies]
 tempfile.workspace = true

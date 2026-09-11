@@ -102,6 +102,91 @@ pub fn diff_stats(old: &str, new: &str) -> (u64, u64) {
     (add, del)
 }
 
+/// Outcome of applying only some hunks of a proposed change.
+pub struct Partial {
+    /// The content actually written.
+    pub content: String,
+    /// Diff text of the hunks the user left out (one `@@` block each).
+    pub rejected: Vec<String>,
+    pub total: usize,
+}
+
+/// Apply only the selected hunks (0-based, numbered like the `@@` sections
+/// of `unified_diff`) of the `old → new` change; other hunks keep `old`.
+pub fn apply_hunks(old: &str, new: &str, selected: &[usize]) -> Partial {
+    use similar::{DiffTag, TextDiff};
+    let diff = TextDiff::from_lines(old, new);
+    let groups = diff.grouped_ops(3);
+    let total = groups.len();
+    // which group each change op belongs to, keyed by its old-side start
+    let mut group_of = std::collections::HashMap::new();
+    let mut rejected = Vec::new();
+    for (gi, group) in groups.iter().enumerate() {
+        for op in group {
+            if op.tag() != DiffTag::Equal {
+                group_of.insert((op.old_range().start, op.new_range().start), gi);
+            }
+        }
+        if !selected.contains(&gi) {
+            // render the hunk the way the user saw it
+            let hunk = diff
+                .unified_diff()
+                .context_radius(3)
+                .iter_hunks()
+                .nth(gi)
+                .map(|h| h.to_string())
+                .unwrap_or_default();
+            rejected.push(hunk);
+        }
+    }
+    let old_lines: Vec<&str> = diff.old_slices().to_vec();
+    let new_lines: Vec<&str> = diff.new_slices().to_vec();
+    let mut content = String::new();
+    for op in diff.ops() {
+        let take_new = match op.tag() {
+            DiffTag::Equal => false,
+            _ => group_of
+                .get(&(op.old_range().start, op.new_range().start))
+                .is_some_and(|gi| selected.contains(gi)),
+        };
+        if op.tag() == DiffTag::Equal || !take_new {
+            for l in &old_lines[op.old_range()] {
+                content.push_str(l);
+            }
+        } else {
+            for l in &new_lines[op.new_range()] {
+                content.push_str(l);
+            }
+        }
+    }
+    Partial {
+        content,
+        rejected,
+        total,
+    }
+}
+
+/// Note for the model when the user applied only part of a change.
+fn partial_note(p: &Partial, note: Option<&str>) -> String {
+    let mut out = format!(
+        "\n\nThe user applied {} of {} hunks. These hunks were NOT applied (the file keeps its previous content there):\n",
+        p.total - p.rejected.len(),
+        p.total
+    );
+    for (i, h) in p.rejected.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(h.trim_end());
+        out.push('\n');
+    }
+    match note {
+        Some(n) => out.push_str(&format!("User's note about them: {n}\nRe-read the file before editing it again.")),
+        None => out.push_str("Treat them as rejected unless the user asks otherwise; re-read the file before editing it again."),
+    }
+    out
+}
+
 fn write_with_dirs(path: &Path, content: &str) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -199,22 +284,30 @@ impl Tool for EditTool {
         let lock = lock_for(&path);
         let _guard = lock.lock().await;
 
+        let mut partial: Option<String> = None;
         let (content_old, content_new, diff) = if args.old_string.is_empty() {
             if path.exists() {
                 return Err(ToolError::Invalid(replacers::ReplaceError::Empty.to_string()));
             }
             let (bom, text) = split_bom(&args.new_string);
             let diff = trim_diff(&unified_diff(&path.display().to_string(), "", text));
-            ctx.ask(
-                "edit",
-                vec![rel.clone()],
-                vec!["*".into()],
-                json!({ "filepath": path.display().to_string(), "diff": diff })
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
-            )
-            .await?;
+            let grant = ctx
+                .ask(
+                    "edit",
+                    vec![rel.clone()],
+                    vec!["*".into()],
+                    json!({ "filepath": path.display().to_string(), "diff": diff })
+                        .as_object()
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+                .await?;
+            if grant.hunks.as_ref().is_some_and(|h| h.is_empty()) {
+                return Err(ToolError::Other(format!(
+                    "The user did not apply this change.{}",
+                    grant.note.map(|n| format!(" Note: {n}")).unwrap_or_default()
+                )));
+            }
             let out = if bom {
                 format!("{BOM}{text}")
             } else {
@@ -250,16 +343,36 @@ impl Tool for EditTool {
                 &normalize_line_endings(source),
                 &normalize_line_endings(next),
             ));
-            ctx.ask(
-                "edit",
-                vec![rel.clone()],
-                vec!["*".into()],
-                json!({ "filepath": path.display().to_string(), "diff": diff })
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
-            )
-            .await?;
+            let grant = ctx
+                .ask(
+                    "edit",
+                    vec![rel.clone()],
+                    vec!["*".into()],
+                    json!({ "filepath": path.display().to_string(), "diff": diff })
+                        .as_object()
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+                .await?;
+            let (next, note) = match &grant.hunks {
+                Some(sel) => {
+                    let p = apply_hunks(source, next, sel);
+                    if p.rejected.len() == p.total {
+                        return Err(ToolError::Other(format!(
+                            "The user did not apply this change.{}",
+                            grant
+                                .note
+                                .as_ref()
+                                .map(|n| format!(" Note: {n}"))
+                                .unwrap_or_default()
+                        )));
+                    }
+                    let note = (!p.rejected.is_empty()).then(|| partial_note(&p, grant.note.as_deref()));
+                    (p.content, note)
+                }
+                None => (next.to_string(), None),
+            };
+            partial = note;
             let out = if bom {
                 format!("{BOM}{next}")
             } else {
@@ -278,7 +391,7 @@ impl Tool for EditTool {
             ));
             (source.to_string(), formatted, diff)
         };
-        Ok(after_write(
+        let mut result = after_write(
             &ctx,
             &path,
             &diff,
@@ -286,7 +399,11 @@ impl Tool for EditTool {
             &content_new,
             "Edit applied successfully.",
         )
-        .await)
+        .await;
+        if let Some(note) = partial {
+            result.output.push_str(&note);
+        }
+        Ok(result)
     }
 }
 
@@ -341,16 +458,36 @@ impl Tool for WriteTool {
         let (new_bom, new) = split_bom(&args.content);
         let bom = had_bom || new_bom;
         let diff = trim_diff(&unified_diff(&path.display().to_string(), old, new));
-        ctx.ask(
-            "edit",
-            vec![rel],
-            vec!["*".into()],
-            json!({ "filepath": path.display().to_string(), "diff": diff })
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        )
-        .await?;
+        let grant = ctx
+            .ask(
+                "edit",
+                vec![rel],
+                vec!["*".into()],
+                json!({ "filepath": path.display().to_string(), "diff": diff })
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+            .await?;
+        let (new, partial) = match &grant.hunks {
+            Some(sel) => {
+                let p = apply_hunks(old, new, sel);
+                if p.rejected.len() == p.total {
+                    return Err(ToolError::Other(format!(
+                        "The user did not apply this change.{}",
+                        grant
+                            .note
+                            .as_ref()
+                            .map(|n| format!(" Note: {n}"))
+                            .unwrap_or_default()
+                    )));
+                }
+                let note = (!p.rejected.is_empty()).then(|| partial_note(&p, grant.note.as_deref()));
+                (p.content, note)
+            }
+            None => (new.to_string(), None),
+        };
+        let new = new.as_str();
         let out = if bom {
             format!("{BOM}{new}")
         } else {
@@ -363,6 +500,9 @@ impl Tool for WriteTool {
             .await
             .unwrap_or_else(|| new.to_string());
         let mut result = after_write(&ctx, &path, &diff, old, &formatted, "Wrote file successfully.").await;
+        if let Some(note) = partial {
+            result.output.push_str(&note);
+        }
         if let Value::Object(m) = &mut result.metadata {
             m.insert("filepath".into(), json!(path.display().to_string()));
             m.insert("exists".into(), json!(exists));
@@ -380,6 +520,25 @@ mod tests {
         let d = "--- a\n+++ b\n@@ -1,2 +1,2 @@\n     foo\n-    bar\n+    baz\n";
         let t = trim_diff(d);
         assert!(t.contains("\n foo\n-bar\n+baz"));
+    }
+
+    #[test]
+    fn partial_hunks() {
+        let old = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\n";
+        let new = "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nM\nn\n";
+        let full = unified_diff("f", old, new);
+        assert_eq!(full.matches("@@").count() / 2, 2, "{full}");
+        let p = apply_hunks(old, new, &[0]);
+        assert_eq!(p.total, 2);
+        assert_eq!(p.rejected.len(), 1);
+        assert_eq!(p.content, "a\nB\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\n");
+        assert!(p.rejected[0].contains("-m\n+M"), "{}", p.rejected[0]);
+        let p = apply_hunks(old, new, &[1]);
+        assert_eq!(p.content, "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nM\nn\n");
+        let p = apply_hunks(old, new, &[0, 1]);
+        assert_eq!(p.content, new);
+        let p = apply_hunks(old, new, &[]);
+        assert_eq!(p.content, old);
     }
 
     #[test]

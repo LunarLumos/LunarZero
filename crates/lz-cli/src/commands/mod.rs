@@ -21,6 +21,31 @@ pub async fn dispatch(cli: Cli) -> anyhow::Result<i32> {
         Some(Command::Agent { cmd }) => agent::run(cmd).await,
         Some(Command::Skill { cmd }) => skill::run(cmd).await,
         Some(Command::Setup) => setup::exec().await,
+        Some(Command::Index { name }) => {
+            let dir = config::resolve_dir(&None)?;
+            let worktree = lz_core::project::resolve(&dir).worktree;
+            let paths = lz_core::paths::Paths::detect();
+            let index = lz_core::index::Index::new(worktree, &paths.cache);
+            let t = std::time::Instant::now();
+            index.refresh();
+            let (files, symbols) = index.stats();
+            match name {
+                None => println!("{files} files · {symbols} symbols · indexed in {:?}", t.elapsed()),
+                Some(n) => {
+                    for d in index.definitions(&n) {
+                        println!(
+                            "{:<9} {}:{}-{}  {}",
+                            d.kind, d.file, d.line, d.end_line, d.signature
+                        );
+                    }
+                    let refs = index.references(&n);
+                    if !refs.is_empty() {
+                        println!("referenced in {} file(s): {}", refs.len(), refs.join(", "));
+                    }
+                }
+            }
+            Ok(0)
+        }
         Some(Command::Recommend) => {
             let r = lz_core::recommended::catalog();
             println!("Built-in skills (always available, loaded on demand):");

@@ -84,6 +84,11 @@ pub enum Command {
     Setup,
     /// Curated MCP servers and skills you can install by alias
     Recommend,
+    /// Symbol index: `lz index` shows stats, `lz index <name>` finds definitions and references
+    Index {
+        /// Symbol to look up
+        name: Option<String>,
+    },
     /// Skills: list, install from GitHub, remove, update
     Skill {
         #[command(subcommand)]

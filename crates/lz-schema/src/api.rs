@@ -280,8 +280,14 @@ pub struct ShellRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PermissionReplyRequest {
     pub reply: PermissionReply,
+    /// Feedback for the model: the reason for a rejection, or what to do
+    /// differently with the hunks that were not applied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// For `edit` requests: apply only these hunks (0-based, in the order of
+    /// the `@@` sections of the diff). `None` applies the whole change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hunks: Option<Vec<usize>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

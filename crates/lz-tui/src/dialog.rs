@@ -296,7 +296,12 @@ pub enum InputAction {
     RenameSession(String),
     ProviderKey(String),
     RejectReason(String),
-    QuestionCustom { question_id: String, index: usize },
+    /// Apply only these hunks of an edit request; the value is a note for the model.
+    PartialApply(String, Vec<usize>),
+    QuestionCustom {
+        question_id: String,
+        index: usize,
+    },
     ExportPath(String),
 }
 

@@ -57,6 +57,8 @@ pub struct Engine {
     /// Free-pool router (usage ledger, cooldowns, `auto` resolution).
     pub router: crate::provider::router::Router,
     pub project_map: crate::project_map::Cache,
+    /// Tree-sitter symbol index of the worktree (built in the background).
+    pub index: Arc<crate::index::Index>,
     config: ArcSwap<Config>,
     raw_config: ArcSwap<Map<String, Value>>,
     config_dirs: ArcSwap<Vec<PathBuf>>,
@@ -138,6 +140,7 @@ impl Engine {
             ..
         } = loaded;
         let quota_path = paths.state.join("quota.json");
+        let symbol_index = Arc::new(crate::index::Index::new(project.worktree.clone(), &paths.cache));
         let engine = Arc::new_cyclic(|weak| Self {
             weak_self: weak.clone(),
             paths,
@@ -157,6 +160,7 @@ impl Engine {
             lsp: crate::lsp::LspManager::new(lsp_enabled),
             router: crate::provider::router::Router::new(Some(quota_path)),
             project_map: crate::project_map::Cache::default(),
+            index: symbol_index,
             config: ArcSwap::from_pointee(config),
             raw_config: ArcSwap::from_pointee(raw),
             config_dirs: ArcSwap::from_pointee(directories),
@@ -170,6 +174,25 @@ impl Engine {
         tracing::info!(dir = %engine.directory.display(), project = engine.project.id, "engine started in {:?}", started_at.elapsed());
         if !opts.offline && engine.config().mcp.as_ref().is_some_and(|m| !m.is_empty()) {
             engine.reload_mcp().await;
+        }
+        if !opts.offline
+            && engine
+                .config()
+                .index
+                .as_ref()
+                .and_then(|i| i.enabled)
+                .unwrap_or(true)
+        {
+            let index = engine.index.clone();
+            tokio::task::spawn_blocking(move || {
+                let t = std::time::Instant::now();
+                index.refresh();
+                let (files, symbols) = index.stats();
+                tracing::info!(
+                    "symbol index: {files} files, {symbols} symbols in {:?}",
+                    t.elapsed()
+                );
+            });
         }
         if !opts.offline {
             engine.watch_config();
@@ -824,7 +847,7 @@ impl EngineApi for Engine {
             if p.session_id == id && mode.covers(&p.permission) {
                 let _ = self
                     .permissions
-                    .reply(&p.id, lz_schema::session::PermissionReply::Once, None)
+                    .reply(&p.id, lz_schema::session::PermissionReply::Once, None, None)
                     .await;
             }
         }
@@ -1033,7 +1056,7 @@ impl EngineApi for Engine {
     }
     async fn reply_permission(&self, id: &str, reply: PermissionReplyRequest) -> ApiResult<()> {
         self.permissions
-            .reply(id, reply.reply, reply.message)
+            .reply(id, reply.reply, reply.message, reply.hunks)
             .await
             .map_err(ApiError::not_found)
     }

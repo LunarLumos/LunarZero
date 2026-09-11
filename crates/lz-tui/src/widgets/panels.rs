@@ -21,6 +21,12 @@ pub struct PermissionPanel {
     pub choice: PermChoice,
     pub fullscreen: bool,
     pub scroll: u16,
+    /// For `edit` diffs: which `@@` hunks are selected (all by default).
+    pub hunks: Vec<bool>,
+    /// Hunk the cursor is on (space toggles it).
+    pub hunk_cursor: usize,
+    /// Request the hunk state was built for.
+    pub request_id: Option<String>,
 }
 
 impl Default for PermissionPanel {
@@ -29,8 +35,29 @@ impl Default for PermissionPanel {
             choice: PermChoice::Once,
             fullscreen: false,
             scroll: 0,
+            hunks: Vec::new(),
+            hunk_cursor: 0,
+            request_id: None,
         }
     }
+}
+
+/// Split a unified diff into its `@@` hunks (file headers dropped).
+pub fn split_hunks(diff: &str) -> Vec<String> {
+    let mut hunks: Vec<String> = Vec::new();
+    for line in diff.lines() {
+        if line.starts_with("---") || line.starts_with("+++") {
+            continue;
+        }
+        if line.starts_with("@@") {
+            hunks.push(String::new());
+        }
+        if let Some(h) = hunks.last_mut() {
+            h.push_str(line);
+            h.push('\n');
+        }
+    }
+    hunks
 }
 
 impl PermissionPanel {
@@ -49,11 +76,73 @@ impl PermissionPanel {
         };
     }
 
+    /// (Re)build hunk selection state for a request.
+    pub fn prepare(&mut self, req: &PermissionRequest) {
+        if self.request_id.as_deref() == Some(req.id.as_str()) {
+            return;
+        }
+        self.request_id = Some(req.id.clone());
+        self.hunk_cursor = 0;
+        self.hunks = if req.permission == "edit" {
+            req.metadata
+                .get("diff")
+                .and_then(|d| d.as_str())
+                .map(|d| vec![true; split_hunks(d).len()])
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+    }
+
+    pub fn toggle_hunk(&mut self) {
+        if let Some(h) = self.hunks.get_mut(self.hunk_cursor) {
+            *h = !*h;
+        }
+    }
+
+    pub fn next_hunk(&mut self) {
+        if !self.hunks.is_empty() {
+            self.hunk_cursor = (self.hunk_cursor + 1) % self.hunks.len();
+        }
+    }
+
+    pub fn prev_hunk(&mut self) {
+        if !self.hunks.is_empty() {
+            self.hunk_cursor = (self.hunk_cursor + self.hunks.len() - 1) % self.hunks.len();
+        }
+    }
+
+    /// Selected hunk indexes when the user left some out; `None` = everything.
+    pub fn selected_hunks(&self) -> Option<Vec<usize>> {
+        if self.hunks.len() < 2 || self.hunks.iter().all(|h| *h) {
+            return None;
+        }
+        Some(
+            self.hunks
+                .iter()
+                .enumerate()
+                .filter(|(_, on)| **on)
+                .map(|(i, _)| i)
+                .collect(),
+        )
+    }
+
     pub fn body_lines(
         req: &PermissionRequest,
         width: usize,
         theme: &Theme,
         full: bool,
+    ) -> Vec<Line<'static>> {
+        Self::body_lines_with(req, width, theme, full, &[], usize::MAX)
+    }
+
+    pub fn body_lines_with(
+        req: &PermissionRequest,
+        width: usize,
+        theme: &Theme,
+        full: bool,
+        hunks: &[bool],
+        cursor: usize,
     ) -> Vec<Line<'static>> {
         let m = &req.metadata;
         let mut out = Vec::new();
@@ -63,7 +152,46 @@ impl PermissionPanel {
                     out.push(Line::from(Span::styled(p.to_string(), theme.bold("text"))));
                 }
                 if let Some(d) = m.get("diff").and_then(|v| v.as_str()) {
-                    out.extend(diff::render(d, width, theme, if full { None } else { Some(24) }));
+                    let parts = split_hunks(d);
+                    if parts.len() >= 2 && hunks.len() == parts.len() {
+                        // one checkbox per hunk; unchecked hunks render dimmed
+                        let per_hunk = if full {
+                            None
+                        } else {
+                            Some(24usize / parts.len().max(1) + 4)
+                        };
+                        for (i, h) in parts.iter().enumerate() {
+                            let on = hunks[i];
+                            let marker = format!(
+                                "{} [{}] hunk {}/{}",
+                                if i == cursor { "▶" } else { " " },
+                                if on { "x" } else { " " },
+                                i + 1,
+                                parts.len()
+                            );
+                            out.push(Line::from(Span::styled(
+                                marker,
+                                if i == cursor {
+                                    theme.bold("primary")
+                                } else if on {
+                                    theme.fg("success")
+                                } else {
+                                    theme.muted()
+                                },
+                            )));
+                            let mut lines = diff::render(h, width, theme, per_hunk);
+                            if !on {
+                                for l in &mut lines {
+                                    for sp in &mut l.spans {
+                                        sp.style = theme.muted().add_modifier(Modifier::DIM);
+                                    }
+                                }
+                            }
+                            out.extend(lines);
+                        }
+                    } else {
+                        out.extend(diff::render(d, width, theme, if full { None } else { Some(24) }));
+                    }
                 } else if let Some(c) = m.get("content").and_then(|v| v.as_str()) {
                     out.extend(
                         c.lines()
@@ -127,7 +255,15 @@ impl PermissionPanel {
             .title(Span::styled(title, theme.bold("warning")));
         let inner = block.inner(area);
         f.render_widget(block, area);
-        let body = Self::body_lines(req, inner.width as usize, theme, full);
+        self.prepare(req);
+        let body = Self::body_lines_with(
+            req,
+            inner.width as usize,
+            theme,
+            full,
+            &self.hunks,
+            self.hunk_cursor,
+        );
         let body_h = inner.height.saturating_sub(2);
         let max_scroll = (body.len() as u16).saturating_sub(body_h);
         self.scroll = self.scroll.min(max_scroll);
@@ -153,11 +289,17 @@ impl PermissionPanel {
         } else {
             format!(" Always: {} ", req.always.join(", "))
         };
+        let once_label = match self.selected_hunks() {
+            Some(sel) => format!(" Apply {} of {} hunks ", sel.len(), self.hunks.len()),
+            None => " Allow once ".to_string(),
+        };
+        let hint = if self.hunks.len() >= 2 {
+            "   space toggle hunk · n/p next/prev · enter · A always · n/esc reject · r reason · shift+tab mode"
+        } else {
+            "   ←/→ tab · enter · a/y once · A always · n/esc reject · r reason · shift+tab mode · ctrl+f full"
+        };
         let buttons = Line::from(vec![
-            Span::styled(
-                " Allow once ",
-                if self.choice == PermChoice::Once { on } else { off },
-            ),
+            Span::styled(once_label, if self.choice == PermChoice::Once { on } else { off }),
             Span::raw(" "),
             Span::styled(
                 always_label,
@@ -179,10 +321,7 @@ impl PermissionPanel {
                     off
                 },
             ),
-            Span::styled(
-                "   ←/→ tab · enter · a/y once · A always · n/esc reject · r reason · shift+tab mode · ctrl+f full",
-                theme.muted(),
-            ),
+            Span::styled(hint, theme.muted()),
         ]);
         let btn_area = Rect {
             x: inner.x,

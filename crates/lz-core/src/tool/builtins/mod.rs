@@ -9,6 +9,7 @@ pub mod question;
 pub mod read;
 pub mod search;
 pub mod skill;
+pub mod symbol;
 pub mod task;
 pub mod todo;
 pub mod web;
@@ -26,6 +27,7 @@ pub fn all() -> Vec<Arc<dyn Tool>> {
         Arc::new(read::ReadTool),
         Arc::new(search::GlobTool),
         Arc::new(search::GrepTool),
+        Arc::new(symbol::SymbolTool),
         Arc::new(edit::EditTool),
         Arc::new(edit::WriteTool),
         Arc::new(task::TaskTool),

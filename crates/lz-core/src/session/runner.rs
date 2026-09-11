@@ -172,8 +172,13 @@ pub async fn prompt(
     session_id: &str,
     req: PromptRequest,
 ) -> Result<UserMessage, PromptError> {
-    if engine.runner.is_running(session_id) {
-        return Err(PromptError::Busy);
+    // A message sent while a turn is running is not refused: it is stored
+    // now and the loop, which re-reads history every step, treats it as the
+    // newest user turn at the next step boundary — the model sees it right
+    // after its current tool calls finish.
+    let queued = engine.runner.is_running(session_id);
+    if queued {
+        tracing::info!("session {session_id} is running; message delivered at the next step");
     }
     let mut session = engine.sessions.get(session_id).await?;
     if session.revert.is_some() {
@@ -476,6 +481,7 @@ pub async fn last_assistant(engine: &Engine, session_id: &str) -> Option<Message
 async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationToken) -> anyhow::Result<()> {
     let mut step: u32 = 0;
     let mut nudges: u32 = 0;
+    let mut heals: u32 = 0;
     let mut structured: Option<serde_json::Value> = None;
     loop {
         if cancel.is_cancelled() {
@@ -512,6 +518,19 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 .as_deref()
                 .is_some_and(|f| f != "tool-calls" && f != "unknown");
             if finished && !has_tool_calls && a.parent_id == last_user.id {
+                let heal_cfg = engine.config().heal.clone().unwrap_or_default();
+                let heal_max = heal_cfg.max_rounds.unwrap_or(3);
+                if a.error.is_none()
+                    && heal_cfg.enabled.unwrap_or(true)
+                    && heals < heal_max
+                    && a.agent != "plan"
+                    && let Some(fail) = failed_check(&msgs, &last_user.id, a)
+                {
+                    heals += 1;
+                    tracing::info!("`{}` failed; repair round {heals}/{heal_max}", fail.command);
+                    push_heal_nudge(&engine, &session_id, &last_user, &fail, heals, heal_max).await?;
+                    continue;
+                }
                 if a.error.is_none()
                     && nudges < MAX_PLAN_NUDGES
                     && a.agent != "plan"
@@ -811,6 +830,25 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 );
             }
         }
+        {
+            // definitions the user named, so the model opens the right file first
+            let cfg = engine.config();
+            let ic = cfg.index.clone().unwrap_or_default();
+            if ic.enabled.unwrap_or(true) && !user_text.is_empty() {
+                let index = engine.index.clone();
+                let text = user_text.clone();
+                let budget = ic.max_chars.unwrap_or(900);
+                let block = tokio::task::spawn_blocking(move || {
+                    index.refresh();
+                    index.relevant(&text, budget)
+                })
+                .await
+                .unwrap_or_default();
+                if !block.is_empty() {
+                    rest.push(block);
+                }
+            }
+        }
         rest.extend(engine.instructions().await);
         if let Some(mcp) = engine.mcp_instructions(&ruleset).await {
             rest.push(mcp);
@@ -947,6 +985,185 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
             let _ = super::compaction::prune(&e, &s).await;
         });
     }
+    Ok(())
+}
+
+/// A build/test/lint command that exited non-zero.
+struct FailedCheck {
+    command: String,
+    exit: i64,
+    output: String,
+}
+
+/// Commands whose non-zero exit means "there is something to fix".
+fn is_check_command(cmd: &str) -> bool {
+    const CHECKS: &[&str] = &[
+        "cargo check",
+        "cargo build",
+        "cargo test",
+        "cargo clippy",
+        "cargo run",
+        "npm test",
+        "npm run build",
+        "npm run lint",
+        "npm run typecheck",
+        "npm run check",
+        "pnpm test",
+        "pnpm build",
+        "pnpm lint",
+        "yarn test",
+        "yarn build",
+        "yarn lint",
+        "bun test",
+        "bun run build",
+        "npx tsc",
+        "tsc",
+        "npx jest",
+        "npx vitest",
+        "vitest",
+        "jest",
+        "npx eslint",
+        "eslint",
+        "pytest",
+        "python -m pytest",
+        "python3 -m pytest",
+        "ruff check",
+        "mypy",
+        "go build",
+        "go test",
+        "go vet",
+        "make",
+        "cmake --build",
+        "ninja",
+        "mvn ",
+        "gradle",
+        "./gradlew",
+        "dotnet build",
+        "dotnet test",
+        "swift build",
+        "swift test",
+        "mix test",
+        "mix compile",
+        "bundle exec rspec",
+        "rspec",
+        "rake test",
+        "zig build",
+        "flutter test",
+        "dart analyze",
+        "next build",
+        "vite build",
+    ];
+    let c = cmd.trim().trim_start_matches("cd ");
+    let c = c.split("&&").last().unwrap_or(c).trim();
+    let c = c
+        .split(" 2>&1")
+        .next()
+        .unwrap_or(c)
+        .split(" | ")
+        .next()
+        .unwrap_or(c)
+        .trim();
+    CHECKS.iter().any(|k| c == k.trim() || c.starts_with(k))
+}
+
+/// The most recent check command of this turn, if it failed and nothing
+/// later succeeded — i.e. the model stopped with errors on the table.
+fn failed_check(msgs: &[MessageWithParts], user_id: &str, last: &AssistantMessage) -> Option<FailedCheck> {
+    let mut latest: Option<FailedCheck> = None;
+    let mut seen_last = false;
+    for m in msgs {
+        let Message::Assistant(a) = &m.info else { continue };
+        if a.parent_id != user_id {
+            continue;
+        }
+        for p in &m.parts {
+            let PartKind::Tool { tool, state, .. } = &p.kind else {
+                continue;
+            };
+            if tool != "bash" {
+                continue;
+            }
+            if let ToolState::Completed {
+                input,
+                output,
+                metadata,
+                ..
+            } = state
+                && let Some(cmd) = input["command"].as_str()
+                && is_check_command(cmd)
+            {
+                let exit = metadata["exit"].as_i64().unwrap_or(0);
+                latest = (exit != 0).then(|| FailedCheck {
+                    command: cmd.to_string(),
+                    exit,
+                    output: output.clone(),
+                });
+            }
+        }
+        seen_last |= a.id == last.id;
+    }
+    if !seen_last {
+        return None;
+    }
+    latest
+}
+
+/// Hidden user message carrying the failure back to the model.
+async fn push_heal_nudge(
+    engine: &Engine,
+    session_id: &str,
+    last_user: &UserMessage,
+    fail: &FailedCheck,
+    round: u32,
+    max: u32,
+) -> anyhow::Result<()> {
+    let cont = UserMessage {
+        id: ids::ascending(Prefix::Message),
+        session_id: session_id.into(),
+        time: UserTime { created: now_ms() },
+        format: None,
+        summary: None,
+        agent: last_user.agent.clone(),
+        model: last_user.model.clone(),
+        system: None,
+        tools: None,
+    };
+    engine
+        .sessions
+        .update_message(Message::User(cont.clone()))
+        .await?;
+    // the tail is where compilers and test runners put the verdict
+    let tail: String = {
+        let t = fail.output.trim();
+        let start = t.char_indices().rev().nth(6_000).map(|(i, _)| i).unwrap_or(0);
+        t[start..].to_string()
+    };
+    let text = format!(
+        "`{}` exited with status {} (repair round {round} of {max}):
+```
+{tail}
+```
+Fix these errors now — read the files they point at, correct them, and run the same command again until it passes. \
+         If the failure is caused by something outside the code (missing tool, no network, a service that is down), say so in one line instead of retrying.",
+        fail.command, fail.exit
+    );
+    let np = engine.sessions.new_part(
+        session_id,
+        &cont.id,
+        PartKind::Text {
+            text,
+            synthetic: true,
+            ignored: false,
+            time: Some(PartTime {
+                start: now_ms(),
+                end: Some(now_ms()),
+            }),
+            metadata: Some(
+                serde_json::json!({ "heal": { "command": fail.command, "exit": fail.exit, "round": round } }),
+            ),
+        },
+    );
+    engine.sessions.update_part(np).await?;
     Ok(())
 }
 
@@ -1209,6 +1426,17 @@ mod plan_nudge_tests {
         assert!(!ends_with_question(
             "To finish Phase 7, the next steps would be: run the deploy."
         ));
+    }
+
+    #[test]
+    fn check_commands() {
+        assert!(is_check_command("cargo test -q 2>&1 | tail -4"));
+        assert!(is_check_command("cd app && npm run build"));
+        assert!(is_check_command("pytest tests/"));
+        assert!(is_check_command("npx tsc --noEmit"));
+        assert!(!is_check_command("ls -la"));
+        assert!(!is_check_command("npm install"));
+        assert!(!is_check_command("git status"));
     }
 
     #[test]

@@ -1529,6 +1529,17 @@ impl App {
                     ..Default::default()
                 };
                 self.remember_model();
+                if let Some(sid) = &self.session
+                    && matches!(
+                        self.store.status_of(sid),
+                        SessionStatus::Busy | SessionStatus::Retry { .. }
+                    )
+                {
+                    self.toast(
+                        ToastKind::Info,
+                        "Queued — the agent sees it right after its current step",
+                    );
+                }
                 self.send(Submit::Prompt(req));
             }
         }
@@ -2840,6 +2851,14 @@ impl App {
                 });
                 self.refresh_meta();
             }
+            InputAction::PartialApply(id, hunks) => {
+                self.reply_permission_with(
+                    id,
+                    PermissionReply::Once,
+                    Some(value).filter(|s| !s.trim().is_empty()),
+                    Some(hunks),
+                );
+            }
             InputAction::RejectReason(id) => {
                 let api = self.api.clone();
                 self.spawn(async move {
@@ -2848,6 +2867,7 @@ impl App {
                         PermissionReplyRequest {
                             reply: PermissionReply::Reject,
                             message: Some(value).filter(|s| !s.trim().is_empty()),
+                            hunks: None,
                         },
                     )
                     .await?;
@@ -2874,13 +2894,47 @@ impl App {
     // ───────────────────────────── permission / question keys ─────────────────────────────
 
     fn reply_permission(&mut self, id: String, reply: PermissionReply) {
+        self.reply_permission_with(id, reply, None, None);
+    }
+
+    fn reply_permission_with(
+        &mut self,
+        id: String,
+        reply: PermissionReply,
+        message: Option<String>,
+        hunks: Option<Vec<usize>>,
+    ) {
         let api = self.api.clone();
         self.spawn(async move {
-            api.reply_permission(&id, PermissionReplyRequest { reply, message: None })
-                .await?;
+            api.reply_permission(
+                &id,
+                PermissionReplyRequest {
+                    reply,
+                    message,
+                    hunks,
+                },
+            )
+            .await?;
             Ok(None)
         });
         self.perm = PermissionPanel::default();
+    }
+
+    /// Allow once — or, when hunks were unchecked, apply just the selected ones
+    /// (asking for a note to the model about the rest).
+    fn approve_permission(&mut self, req: &PermissionRequest) {
+        match self.perm.selected_hunks() {
+            Some(sel) => {
+                self.dialogs.push(Dialog::Input(InputDialog {
+                    title: format!("Apply {} of {} hunks", sel.len(), self.perm.hunks.len()),
+                    prompt: "Note for the agent about the skipped hunks (optional)".into(),
+                    value: String::new(),
+                    masked: false,
+                    action: InputAction::PartialApply(req.id.clone(), sel),
+                }));
+            }
+            None => self.reply_permission(req.id.clone(), PermissionReply::Once),
+        }
     }
 
     fn on_permission_key(&mut self, k: &KeyEvent, actions: &[String], req: &PermissionRequest) {
@@ -2899,9 +2953,10 @@ impl App {
             KeyCode::Down | KeyCode::Char('j') => self.perm.scroll = self.perm.scroll.saturating_add(1),
             KeyCode::PageUp => self.perm.scroll = self.perm.scroll.saturating_sub(10),
             KeyCode::PageDown => self.perm.scroll = self.perm.scroll.saturating_add(10),
-            KeyCode::Char('a') | KeyCode::Char('y') => {
-                self.reply_permission(req.id.clone(), PermissionReply::Once)
-            }
+            KeyCode::Char(' ') if !self.perm.hunks.is_empty() => self.perm.toggle_hunk(),
+            KeyCode::Char('n') if self.perm.hunks.len() >= 2 => self.perm.next_hunk(),
+            KeyCode::Char('p') if self.perm.hunks.len() >= 2 => self.perm.prev_hunk(),
+            KeyCode::Char('a') | KeyCode::Char('y') => self.approve_permission(req),
             KeyCode::Char('A') | KeyCode::Char('Y') => {
                 self.reply_permission(req.id.clone(), PermissionReply::Always)
             }
@@ -2917,14 +2972,11 @@ impl App {
                     action: InputAction::RejectReason(req.id.clone()),
                 }));
             }
-            KeyCode::Enter => {
-                let reply = match self.perm.choice {
-                    PermChoice::Once => PermissionReply::Once,
-                    PermChoice::Always => PermissionReply::Always,
-                    PermChoice::Reject => PermissionReply::Reject,
-                };
-                self.reply_permission(req.id.clone(), reply);
-            }
+            KeyCode::Enter => match self.perm.choice {
+                PermChoice::Once => self.approve_permission(req),
+                PermChoice::Always => self.reply_permission(req.id.clone(), PermissionReply::Always),
+                PermChoice::Reject => self.reply_permission(req.id.clone(), PermissionReply::Reject),
+            },
             KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
             _ => {}
         }

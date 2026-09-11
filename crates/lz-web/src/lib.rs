@@ -649,6 +649,8 @@ async fn session_abort(State(s): St, Path(id): Path<String>) -> Result<Json<Valu
 struct PermissionBody {
     reply: String,
     message: Option<String>,
+    /// edit requests: apply only these hunk indexes
+    hunks: Option<Vec<usize>>,
 }
 
 async fn permission_reply(
@@ -667,6 +669,7 @@ async fn permission_reply(
             PermissionReplyRequest {
                 reply,
                 message: b.message.filter(|m| !m.trim().is_empty()),
+                hunks: b.hunks,
             },
         )
         .await

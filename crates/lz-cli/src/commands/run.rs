@@ -247,7 +247,11 @@ async fn print_events(
                     let _ = engine
                         .reply_permission(
                             &req.id,
-                            lz_schema::api::PermissionReplyRequest { reply, message: None },
+                            lz_schema::api::PermissionReplyRequest {
+                                reply,
+                                message: None,
+                                hunks: None,
+                            },
                         )
                         .await;
                 }

@@ -113,16 +113,30 @@ impl RenderCache {
                         .collect();
                     if visible.is_empty() {
                         // the runner sent the model back to its open plan items
-                        let plan_continue = parts.iter().any(|p| {
-                            matches!(&p.kind, PartKind::Text { metadata: Some(md), .. } if md["plan_continue"] == true)
+                        let marker = parts.iter().find_map(|p| match &p.kind {
+                            PartKind::Text {
+                                metadata: Some(md), ..
+                            } if md["plan_continue"] == true => {
+                                Some("↻ plan still has open items — continuing".to_string())
+                            }
+                            PartKind::Text {
+                                metadata: Some(md), ..
+                            } if md["heal"].is_object() => {
+                                let h = &md["heal"];
+                                let cmd = h["command"].as_str().unwrap_or("command");
+                                let cmd: String = cmd.chars().take(40).collect();
+                                Some(format!(
+                                    "↻ `{cmd}` exited {} — repairing (round {})",
+                                    h["exit"].as_i64().unwrap_or(1),
+                                    h["round"].as_u64().unwrap_or(1)
+                                ))
+                            }
+                            _ => None,
                         });
-                        if plan_continue {
+                        if let Some(text) = marker {
                             blocks.push(Block {
-                                key: format!("plan-continue-{}", u.id),
-                                lines: vec![Line::from(Span::styled(
-                                    "↻ plan still has open items — continuing",
-                                    theme.muted(),
-                                ))],
+                                key: format!("continue-{}", u.id),
+                                lines: vec![Line::from(Span::styled(text, theme.muted()))],
                             });
                         }
                         continue;

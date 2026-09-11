@@ -131,11 +131,21 @@ Modes sit between the agent's rules and your own `permission` config, so an expl
 
 ## It finishes what it starts
 
+- **Self-healing loop** — when a turn ends right after `cargo test`, `npm test`, `pytest`, `tsc`, `go build`… exited non-zero, the errors are fed straight back ("repair round 1 of 3") and the model fixes and re-runs until it passes, no prompting. `heal.max_rounds` sets the cap.
 - **Plans in the sidebar** — for anything with three or more steps the agent writes a plan you can watch; if it stops with items open and hands them back as "next steps", it is sent straight back to them.
 - **Resume, don't restart** — a turn that stopped (quota, error, `esc`) continues from its last completed step with `/retry` or by typing `continue`, keeping every file already written.
 - **Loop guard** — a model repeating itself is cut off and the request moves to the next model.
 - **Quiet failures** — errors are one-line toasts in the sidebar, never a wall of JSON over your work.
 - **Long output tamed** — repeated warning lines are collapsed; installs, builds and docker get a 10-minute timeout automatically.
+- **Type while it works** — a message sent mid-turn is not refused: it lands right after the current step, so you can steer without waiting.
+
+## Review hunk by hunk
+
+When the agent edits a file, the permission panel lists every `@@` hunk with a checkbox: `space` toggles, `n`/`p` move, `enter` applies just the checked ones (like `git add -p`). Skipped hunks stay as they were and the model is told which ones you left out — with your note if you add one — so it can redo function B while A is already in.
+
+## Symbol index
+
+A native tree-sitter index (Rust, Python, JavaScript/TypeScript, Go) is built in the background — 2k symbols in ~0.4 s, cached, refreshed incrementally by mtime. Definitions you name in a prompt are placed in the system prompt as `<symbols>` (`fn apply_hunks — src/edit.rs:116 · used in 3 files` + signature) so the model opens the right file instead of exploring, and the `symbol` tool answers "where is X defined / used" without a grep. `lz index [name]` shows it from the shell; `"index": {"enabled": false}` turns it off.
 
 ## Themes
 
@@ -153,7 +163,7 @@ Modes sit between the agent's rules and your own `permission` config, so an expl
 | `lz run [message..] [--format text\|json] [-c] [--model] [--auto]` | non-interactive, NDJSON with `--format json` |
 | `lz setup` · `lz auth list\|login\|logout` | connect providers |
 | `lz pool setup\|list\|status` | the free pool |
-| `lz models [provider]` · `lz agent list\|create` | models, agents |
+| `lz models [provider]` · `lz agent list\|create` · `lz index [name]` | models, agents, symbol index |
 | `lz skill list\|install\|remove\|update` · `lz mcp list\|install\|add` · `lz recommend` | skills & MCP |
 | `lz web [--port 7411]` | portal on its own |
 | `lz session list\|delete` · `lz export` · `lz import` | sessions |

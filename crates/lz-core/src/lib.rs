@@ -7,6 +7,7 @@ pub mod command;
 pub mod config;
 pub mod engine;
 pub mod files;
+pub mod index;
 pub mod llm;
 pub mod lsp;
 pub mod mcp;

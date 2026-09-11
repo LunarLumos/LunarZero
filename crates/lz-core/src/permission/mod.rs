@@ -139,9 +139,18 @@ pub struct AskInput {
     pub ruleset: Ruleset,
 }
 
+/// What an approval carries back to the tool.
+#[derive(Debug, Clone, Default)]
+pub struct Grant {
+    /// `edit` only: apply just these hunks of the proposed diff.
+    pub hunks: Option<Vec<usize>>,
+    /// A note from the user for the model (e.g. why hunks were left out).
+    pub note: Option<String>,
+}
+
 struct Pending {
     request: PermissionRequest,
-    tx: oneshot::Sender<Result<(), PermissionError>>,
+    tx: oneshot::Sender<Result<Grant, PermissionError>>,
 }
 
 pub struct Permissions {
@@ -187,9 +196,9 @@ impl Permissions {
     }
 
     /// Evaluate and, if needed, block until the user replies.
-    pub async fn ask(&self, input: AskInput) -> Result<(), PermissionError> {
+    pub async fn ask(&self, input: AskInput) -> Result<Grant, PermissionError> {
         if self.auto_approve {
-            return Ok(());
+            return Ok(Grant::default());
         }
         let approved = self.approved_ruleset();
         let rulesets: Vec<&Ruleset> = vec![&input.ruleset, &approved];
@@ -208,7 +217,7 @@ impl Permissions {
             }
         }
         if !needs_ask {
-            return Ok(());
+            return Ok(Grant::default());
         }
 
         let request = PermissionRequest {
@@ -240,6 +249,7 @@ impl Permissions {
         id: &str,
         reply: PermissionReply,
         message: Option<String>,
+        hunks: Option<Vec<usize>>,
     ) -> Result<(), String> {
         let pending = {
             let mut p = self.pending.lock().unwrap_or_else(|e| e.into_inner());
@@ -254,7 +264,10 @@ impl Permissions {
         });
         match reply {
             PermissionReply::Once => {
-                let _ = pending.tx.send(Ok(()));
+                let _ = pending.tx.send(Ok(Grant {
+                    hunks,
+                    note: message.filter(|m| !m.trim().is_empty()),
+                }));
             }
             PermissionReply::Always => {
                 let rules: Vec<Rule> = pending
@@ -278,7 +291,7 @@ impl Permissions {
                         Ok(())
                     })
                     .await;
-                let _ = pending.tx.send(Ok(()));
+                let _ = pending.tx.send(Ok(Grant::default()));
                 // resolve other pending requests now satisfied
                 let approved = self.approved_ruleset();
                 let mut satisfied = Vec::new();
@@ -305,7 +318,7 @@ impl Permissions {
                             request_id: pid,
                             reply: PermissionReply::Always,
                         });
-                        let _ = o.tx.send(Ok(()));
+                        let _ = o.tx.send(Ok(Grant::default()));
                     }
                 }
             }

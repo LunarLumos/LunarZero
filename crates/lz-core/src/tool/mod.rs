@@ -98,7 +98,7 @@ impl ToolCtx {
         patterns: Vec<String>,
         always: Vec<String>,
         metadata: Map<String, Value>,
-    ) -> Result<(), PermissionError> {
+    ) -> Result<crate::permission::Grant, PermissionError> {
         let session = self.engine.sessions.get(&self.session_id).await.ok();
         let ruleset = crate::permission::effective(
             &self.agent.permission,
