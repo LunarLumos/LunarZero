@@ -459,6 +459,8 @@ impl Engine {
                     }
                 }
                 v.extend(e.config_dirs().iter().map(|d| d.join("config.json")));
+                v.push(e.auth.path().to_path_buf());
+                v.push(e.paths.legacy_auth());
                 v
             };
             let stamp = |paths: &[PathBuf]| -> Vec<(PathBuf, Option<std::time::SystemTime>, u64)> {

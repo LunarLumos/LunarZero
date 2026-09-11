@@ -823,6 +823,7 @@ pub async fn process(input: ProcessInput) -> StepResult {
     let mut request = build_request(&ctx.model);
     // pool models already tried in this step (failover never returns to them)
     let mut tried: Vec<String> = vec![format!("{}/{}", ctx.model.provider_id, ctx.model.id)];
+    let mut waits: u32 = 0;
     let failover_enabled = input.route.is_some();
 
     let mut attempt: u32 = 0;
@@ -964,10 +965,79 @@ pub async fn process(input: ProcessInput) -> StepResult {
                         }
                         continue;
                     }
-                    tracing::warn!(
-                        "pool exhausted, falling back to retry on {}",
-                        tried.last().cloned().unwrap_or_default()
-                    );
+                    // nothing free right now: wait for the soonest model (≤ 2 min)
+                    // rather than failing, and say what we are waiting for
+                    const MAX_WAIT_MS: u64 = 120_000;
+                    // a model we already tried is fine to wait for (a 429 with
+                    // retry-after is exactly that case), at most a few times per step
+                    if waits < 3
+                        && let Some((model, wait, why)) =
+                            engine.router.soonest(&registry, &route.need, &[], MAX_WAIT_MS)
+                    {
+                        waits += 1;
+                        let wait = wait.max(1_000) + 500;
+                        let key = format!("{}/{}", model.provider_id, model.id);
+                        let message = format!("waiting {}s for {key} ({why})", wait / 1000);
+                        tracing::warn!("{message}");
+                        engine.status.set(
+                            &engine.bus,
+                            &session_id,
+                            SessionStatus::Retry {
+                                attempt,
+                                message: message.clone(),
+                                next: now_ms() + wait,
+                            },
+                        );
+                        tokio::select! {
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(wait)) => {}
+                            _ = input.cancel.cancelled() => {
+                                ctx.halt(MessageError::Aborted { message: "Aborted".into() }).await;
+                                break;
+                            }
+                        }
+                        engine.status.set(&engine.bus, &session_id, SessionStatus::Busy);
+                        tried.retain(|t| *t != key);
+                        // the waited-for model may still lose to a better one that freed up
+                        if let Some(pick) =
+                            engine
+                                .router
+                                .pick(&registry, route.strategy, &route.need, &session_id, &tried, 0)
+                        {
+                            ctx.switch_model(pick.model, &format!("waited for {key}")).await;
+                            tried.push(format!("{}/{}", ctx.model.provider_id, ctx.model.id));
+                            request = build_request(&ctx.model);
+                            continue;
+                        }
+                    }
+                    // truly exhausted: explain every model instead of showing a raw provider error
+                    let blocked = engine.router.explain(&registry, &route.need, &[]);
+                    if !blocked.is_empty() || !tried.is_empty() {
+                        let mut lines: Vec<String> = Vec::new();
+                        if !blocked.iter().any(|(m, _, _)| tried.last() == Some(m)) {
+                            lines.push(format!(
+                                "{}: {}",
+                                tried.last().cloned().unwrap_or_default(),
+                                short_error(&err)
+                            ));
+                        }
+                        for (model, why, wait) in blocked.iter().take(8) {
+                            lines.push(match wait {
+                                Some(ms) => format!("{model}: {why} (free in {}s)", ms / 1000),
+                                None => format!("{model}: {why}"),
+                            });
+                        }
+                        let msg = format!(
+                            "No free-pool model can take this request right now (~{}k tokens). {}",
+                            route.need.tokens / 1000,
+                            lines.join(" · ")
+                        );
+                        ctx.halt(MessageError::Unknown {
+                            message: msg,
+                            r#ref: None,
+                        })
+                        .await;
+                        break;
+                    }
                 }
                 let retry_msg = if produced_output {
                     None

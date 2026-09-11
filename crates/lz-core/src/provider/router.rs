@@ -295,11 +295,13 @@ impl Router {
             LlmError::RateLimited { retry_after_ms, .. } => {
                 let u = l.models.entry(Self::key(model)).or_default();
                 u.failures += 1;
-                let base = retry_after_ms.unwrap_or(0).max(60_000);
                 let ms = if daily {
                     next_utc_midnight(now).saturating_sub(now)
+                } else if let Some(ra) = retry_after_ms {
+                    // the provider told us exactly when; trust it (+ a little slack)
+                    (*ra).max(2_000) + 1_000
                 } else {
-                    (base * (1u64 << u.failures.min(6))).min(60 * MINUTE)
+                    (60_000 * (1u64 << u.failures.min(6))).min(60 * MINUTE)
                 };
                 u.cooldown_until = now + ms;
                 u.last_error = msg.clone();
@@ -322,9 +324,10 @@ impl Router {
                     429 => {
                         if daily {
                             next_utc_midnight(now).saturating_sub(now)
+                        } else if let Some(ra) = retry_after_ms {
+                            (*ra).max(2_000) + 1_000
                         } else {
-                            (retry_after_ms.unwrap_or(60_000).max(60_000) * (1u64 << u.failures.min(6)))
-                                .min(60 * MINUTE)
+                            (60_000 * (1u64 << u.failures.min(6))).min(60 * MINUTE)
                         }
                     }
                     _ => (30_000 * (1u64 << u.failures.min(5))).min(15 * MINUTE),
@@ -357,51 +360,171 @@ impl Router {
 
     /// Whether a model is currently usable: not cooling down and under every
     /// limit it declares. `tokens` is the estimated prompt size.
-    fn available(&self, l: &mut Ledger, model: &Model, tokens: u64, now: u64) -> Result<f64, &'static str> {
+    /// Why a model cannot be used right now, and when it can be (ms), if
+    /// that is knowable. `None` wait = not until something else changes
+    /// (needs a smaller request, a key, …).
+    fn blocked(&self, l: &mut Ledger, model: &Model, tokens: u64, now: u64) -> Option<(String, Option<u64>)> {
         if let Some((until, _)) = l.providers.get(&model.provider_id)
             && *until > now
         {
-            return Err("provider cooldown");
+            return Some(("provider cooling down".into(), Some(*until)));
         }
         let Some(free) = &model.pool else {
-            return Err("not in pool");
+            return Some(("not in pool".into(), None));
         };
         let u = l.models.entry(Self::key(model)).or_default();
         u.prune(now);
         if u.cooldown_until > now {
-            return Err("cooldown");
+            let why = if u.last_error.is_empty() {
+                "cooling down".to_string()
+            } else {
+                format!(
+                    "cooling down after: {}",
+                    u.last_error.chars().take(60).collect::<String>()
+                )
+            };
+            return Some((why, Some(u.cooldown_until)));
         }
-        // headroom = smallest remaining fraction across declared limits
-        let mut headroom: f64 = 1.0;
         if let Some(rpm) = free.rpm {
             let used = u.count_since(now - MINUTE);
             if used >= rpm {
-                return Err("rpm");
+                let oldest = u.reqs.iter().rev().nth(rpm as usize - 1).copied().unwrap_or(now);
+                return Some((format!("{rpm} requests/min used"), Some(oldest + MINUTE)));
             }
-            headroom = headroom.min(1.0 - used as f64 / rpm as f64);
         }
         if let Some(rpd) = free.rpd {
             let used = u.count_since(now - DAY);
             if used >= rpd {
-                return Err("rpd");
+                let oldest = u.reqs.iter().rev().nth(rpd as usize - 1).copied().unwrap_or(now);
+                return Some((format!("{rpd} requests/day used"), Some(oldest + DAY)));
             }
-            headroom = headroom.min(1.0 - used as f64 / rpd as f64);
         }
         if let Some(tpm) = free.tpm {
             let used = u.tokens_since(now - MINUTE);
             if used + tokens > tpm {
-                return Err("tpm");
+                if tokens > tpm {
+                    return Some((
+                        format!(
+                            "request ~{}k tokens > {}k tokens/min cap",
+                            tokens / 1000,
+                            tpm / 1000
+                        ),
+                        None,
+                    ));
+                }
+                let first = u
+                    .toks
+                    .iter()
+                    .rev()
+                    .take_while(|(t, _)| *t >= now - MINUTE)
+                    .last()
+                    .map(|(t, _)| *t)
+                    .unwrap_or(now);
+                return Some((
+                    format!("{}k of {}k tokens/min used", used / 1000, tpm / 1000),
+                    Some(first + MINUTE),
+                ));
             }
-            headroom = headroom.min(1.0 - used as f64 / tpm as f64);
         }
         if let Some(tpd) = free.tpd {
             let used = u.tokens_since(now - DAY);
             if used + tokens > tpd {
-                return Err("tpd");
+                if tokens > tpd {
+                    return Some((format!("request > {}k tokens/day cap", tpd / 1000), None));
+                }
+                let first = u
+                    .toks
+                    .iter()
+                    .rev()
+                    .take_while(|(t, _)| *t >= now - DAY)
+                    .last()
+                    .map(|(t, _)| *t)
+                    .unwrap_or(now);
+                return Some((
+                    format!("{}k of {}k tokens/day used", used / 1000, tpd / 1000),
+                    Some(first + DAY),
+                ));
             }
-            headroom = headroom.min(1.0 - used as f64 / tpd as f64);
+        }
+        None
+    }
+
+    fn available(&self, l: &mut Ledger, model: &Model, tokens: u64, now: u64) -> Result<f64, &'static str> {
+        if self.blocked(l, model, tokens, now).is_some() {
+            return Err("blocked");
+        }
+        let free = model.pool.as_ref().unwrap();
+        let u = l.models.entry(Self::key(model)).or_default();
+        let mut headroom: f64 = 1.0;
+        if let Some(rpm) = free.rpm {
+            headroom = headroom.min(1.0 - u.count_since(now - MINUTE) as f64 / rpm as f64);
+        }
+        if let Some(rpd) = free.rpd {
+            headroom = headroom.min(1.0 - u.count_since(now - DAY) as f64 / rpd as f64);
+        }
+        if let Some(tpm) = free.tpm {
+            headroom = headroom.min(1.0 - u.tokens_since(now - MINUTE) as f64 / tpm as f64);
+        }
+        if let Some(tpd) = free.tpd {
+            headroom = headroom.min(1.0 - u.tokens_since(now - DAY) as f64 / tpd as f64);
         }
         Ok(headroom)
+    }
+
+    fn candidates<'a>(&self, registry: &'a Registry, need: &Need, exclude: &[String]) -> Vec<&'a Model> {
+        registry
+            .connected()
+            .filter(|p| p.id != pool::PROVIDER)
+            .flat_map(|p| p.models.values())
+            .filter(|m| m.pool.is_some() && m.protocol.is_some())
+            .filter(|m| !exclude.contains(&Self::key(m)))
+            .filter(|m| !need.tools || m.tool_call)
+            .filter(|m| !need.vision || m.attachment)
+            .filter(|m| m.limit.context >= (need.tokens as f64) * 1.1 + 2048.0)
+            .collect()
+    }
+
+    /// Every pool model that fits the request but is blocked right now, with
+    /// the reason and (when known) how long until it frees up.
+    pub fn explain(
+        &self,
+        registry: &Registry,
+        need: &Need,
+        exclude: &[String],
+    ) -> Vec<(String, String, Option<u64>)> {
+        let now = now_ms();
+        let mut l = self.ledger.lock().unwrap();
+        let mut out = Vec::new();
+        for m in self.candidates(registry, need, exclude) {
+            if let Some((why, until)) = self.blocked(&mut l, m, need.tokens, now) {
+                out.push((Self::key(m), why, until.map(|u| u.saturating_sub(now))));
+            }
+        }
+        out.sort_by_key(|(_, _, w)| w.unwrap_or(u64::MAX));
+        out
+    }
+
+    /// The blocked model that frees up soonest (model, wait ms, reason), if
+    /// any will within `max_wait_ms`.
+    pub fn soonest(
+        &self,
+        registry: &Registry,
+        need: &Need,
+        exclude: &[String],
+        max_wait_ms: u64,
+    ) -> Option<(Model, u64, String)> {
+        let now = now_ms();
+        let mut l = self.ledger.lock().unwrap();
+        let mut best: Option<(Model, u64, String)> = None;
+        for m in self.candidates(registry, need, exclude) {
+            if let Some((why, Some(until))) = self.blocked(&mut l, m, need.tokens, now) {
+                let wait = until.saturating_sub(now);
+                if wait <= max_wait_ms && best.as_ref().is_none_or(|(_, w, _)| wait < *w) {
+                    best = Some((m.clone(), wait, why));
+                }
+            }
+        }
+        best
     }
 
     /// Pick the best pool model for `need`, skipping `exclude` (`provider/model` keys).
@@ -416,16 +539,7 @@ impl Router {
     ) -> Option<Pick> {
         let now = now_ms();
         let mut l = self.ledger.lock().unwrap();
-        let candidates: Vec<&Model> = registry
-            .connected()
-            .filter(|p| p.id != pool::PROVIDER)
-            .flat_map(|p| p.models.values())
-            .filter(|m| m.pool.is_some() && m.protocol.is_some())
-            .filter(|m| !exclude.contains(&Self::key(m)))
-            .filter(|m| !need.tools || m.tool_call)
-            .filter(|m| !need.vision || m.attachment)
-            .filter(|m| m.limit.context >= (need.tokens as f64) * 1.1 + 2048.0)
-            .collect();
+        let candidates: Vec<&Model> = self.candidates(registry, need, exclude);
         if candidates.is_empty() {
             return None;
         }
