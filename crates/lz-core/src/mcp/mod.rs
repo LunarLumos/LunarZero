@@ -282,6 +282,26 @@ impl McpManager {
         *self.servers.write().await = servers;
     }
 
+    /// name → config as currently registered (for diffing against the config file).
+    pub async fn configs(&self) -> BTreeMap<String, McpServerConfig> {
+        self.servers
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.config.clone()))
+            .collect()
+    }
+
+    /// Drop a server entirely (its client is closed on drop).
+    pub async fn remove(&self, name: &str, bus: &crate::bus::Bus) {
+        if self.servers.write().await.remove(name).is_some() {
+            bus.publish(Event::McpStatus {
+                name: name.into(),
+                status: McpStatus::Disabled,
+            });
+        }
+    }
+
     pub async fn status(&self) -> BTreeMap<String, McpStatus> {
         self.servers
             .read()

@@ -171,6 +171,9 @@ impl Engine {
         if !opts.offline && engine.config().mcp.as_ref().is_some_and(|m| !m.is_empty()) {
             engine.reload_mcp().await;
         }
+        if !opts.offline {
+            engine.watch_config();
+        }
         // skills.urls: install anything missing, in the background
         let urls = engine
             .config()
@@ -368,6 +371,124 @@ impl Engine {
             let _ = &server;
         }
         self.commands.store(Arc::new(commands));
+    }
+
+    /// Bring MCP servers in line with the current config without restarting
+    /// the ones that did not change: new/changed → (re)connect, removed → drop.
+    pub async fn sync_mcp(&self) {
+        let wanted = self.config().mcp.clone().unwrap_or_default();
+        let current = self.mcp.configs().await;
+        let mut changed = false;
+        for name in current.keys() {
+            if !wanted.contains_key(name) {
+                self.mcp.remove(name, &self.bus).await;
+                changed = true;
+            }
+        }
+        let mut to_connect = Vec::new();
+        for (name, entry) in &wanted {
+            match entry {
+                lz_schema::config::McpEntry::Server(cfg) => {
+                    let enabled = match cfg {
+                        lz_schema::config::McpServerConfig::Local { enabled, .. }
+                        | lz_schema::config::McpServerConfig::Remote { enabled, .. } => {
+                            enabled.unwrap_or(true)
+                        }
+                    };
+                    if current.get(name) != Some(cfg) {
+                        self.mcp.register(name, cfg.clone()).await;
+                        changed = true;
+                        if enabled {
+                            to_connect.push(name.clone());
+                        }
+                    }
+                }
+                lz_schema::config::McpEntry::Toggle { .. } => {
+                    if current.contains_key(name) {
+                        self.mcp.remove(name, &self.bus).await;
+                        changed = true;
+                    }
+                }
+            }
+        }
+        for name in to_connect {
+            if let Err(e) = self.mcp.connect_one(&name, &self.directory, &self.bus).await {
+                tracing::warn!(server = name, "mcp connect failed: {e}");
+                self.bus.publish(Event::McpStatus {
+                    name: name.clone(),
+                    status: McpStatus::Failed { error: e },
+                });
+            }
+        }
+        if changed {
+            self.tools.set_extra(self.mcp.tools().await);
+        }
+    }
+
+    /// Watch the config files (project + global + tui.json) and hot-reload
+    /// when any of them changes — edits from the portal, from `lz mcp
+    /// install` in another process, or by hand all reach the running engine.
+    pub fn watch_config(self: &Arc<Self>) {
+        let engine = self.clone();
+        tokio::spawn(async move {
+            let candidates = |e: &Engine| -> Vec<PathBuf> {
+                let mut v: Vec<PathBuf> = e
+                    .paths
+                    .global_config_dirs()
+                    .into_iter()
+                    .flat_map(|d| {
+                        [
+                            "lunarzero.json",
+                            "lunarzero.jsonc",
+                            "opencode.json",
+                            "opencode.jsonc",
+                            "config.json",
+                        ]
+                        .iter()
+                        .map(move |n| d.join(n))
+                    })
+                    .collect();
+                for dir in crate::config::ancestors(&e.directory, Some(&e.project.worktree)) {
+                    for n in [
+                        "lunarzero.json",
+                        "lunarzero.jsonc",
+                        "opencode.json",
+                        "opencode.jsonc",
+                    ] {
+                        v.push(dir.join(n));
+                    }
+                }
+                v.extend(e.config_dirs().iter().map(|d| d.join("config.json")));
+                v
+            };
+            let stamp = |paths: &[PathBuf]| -> Vec<(PathBuf, Option<std::time::SystemTime>, u64)> {
+                paths
+                    .iter()
+                    .map(|p| {
+                        let m = std::fs::metadata(p).ok();
+                        (
+                            p.clone(),
+                            m.as_ref().and_then(|m| m.modified().ok()),
+                            m.map(|m| m.len()).unwrap_or(0),
+                        )
+                    })
+                    .collect()
+            };
+            let mut last = stamp(&candidates(&engine));
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                let now = stamp(&candidates(&engine));
+                if now != last {
+                    last = now;
+                    tracing::info!("config changed on disk; reloading");
+                    if let Err(e) = engine.reload().await {
+                        tracing::warn!("config reload failed: {e}");
+                        continue;
+                    }
+                    engine.sync_mcp().await;
+                }
+            }
+        });
     }
 
     pub async fn refresh_catalog(&self) -> anyhow::Result<()> {
