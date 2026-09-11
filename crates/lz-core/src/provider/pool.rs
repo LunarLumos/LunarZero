@@ -226,6 +226,11 @@ pub fn apply(providers: &mut BTreeMap<String, Provider>, config: &Config, all_mo
         model.tool_call = pm.tools;
         model.attachment |= pm.vision;
         model.reasoning |= pm.reasoning;
+        // pool members are used on their free tier: the catalog's list price
+        // would otherwise be charged to the session (`pool.paid` keeps it)
+        if !cfg.paid.unwrap_or(false) {
+            model.cost = Default::default();
+        }
         model.pool = Some(cat.info(pm));
         if model.variants.is_empty() {
             model.variants = transform::variants(model, None);

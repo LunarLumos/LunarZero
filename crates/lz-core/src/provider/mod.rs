@@ -770,6 +770,21 @@ mod tests {
     }
 
     #[test]
+    fn pool_members_are_free_unless_paid() {
+        let catalog = catalog::embedded();
+        let dir = tempfile::tempdir().unwrap();
+        let auth = AuthStore::at(dir.path().join("auth.json"));
+        let free = Registry::build_with(&catalog, &Config::default(), &auth, true);
+        let m = free.get("google", "gemini-3.7-flash").unwrap();
+        assert!(m.pool.is_some(), "gemini-3.7-flash is a pool member");
+        assert_eq!(m.cost.input, 0.0);
+        assert_eq!(m.cost.output, 0.0);
+        let cfg: Config = serde_json::from_value(serde_json::json!({ "pool": { "paid": true } })).unwrap();
+        let paid = Registry::build_with(&catalog, &cfg, &auth, true);
+        assert!(paid.get("google", "gemini-3.7-flash").unwrap().cost.input > 0.0);
+    }
+
+    #[test]
     fn variants_from_reasoning_options() {
         let catalog = catalog::embedded();
         let dir = tempfile::tempdir().unwrap();

@@ -112,6 +112,19 @@ impl RenderCache {
                         .filter(|p| !matches!(&p.kind, PartKind::Text { synthetic: true, .. }))
                         .collect();
                     if visible.is_empty() {
+                        // the runner sent the model back to its open plan items
+                        let plan_continue = parts.iter().any(|p| {
+                            matches!(&p.kind, PartKind::Text { metadata: Some(md), .. } if md["plan_continue"] == true)
+                        });
+                        if plan_continue {
+                            blocks.push(Block {
+                                key: format!("plan-continue-{}", u.id),
+                                lines: vec![Line::from(Span::styled(
+                                    "↻ plan still has open items — continuing",
+                                    theme.muted(),
+                                ))],
+                            });
+                        }
                         continue;
                     }
                     let content: String = visible

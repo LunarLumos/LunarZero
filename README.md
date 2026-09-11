@@ -130,13 +130,18 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
 - **Resume, don't restart**: a turn that stopped (error, quota, `esc`) continues from its last
   completed step with `/retry` (or just typing `retry`/`continue`), keeping the plan and every file
   already written; the model you have selected now is used.
+- **Plans get finished**: when the model stops with items of its own plan still open and hands
+  them back as "next steps" (or "I'll wait here"), it is sent straight back to them — at most
+  twice per turn, and never when it actually asked you a question. A short follow-up
+  (`continue`, `run the tests`, `fix it`) re-activates an earlier plan the same way.
 - **Immediate failover**: a 429/5xx/timeout/bad key before any output streamed switches to the
   next model at once (no backoff); the failed one cools down (rate windows, daily quotas until
   UTC midnight, bad keys for an hour) and the TUI footer shows `→ provider/model`.
 - Picking a pool model explicitly (say `groq/llama-3.3-70b-versatile`) still fails over inside
   the pool when it is rate limited; `"pool": { "fallback": false }` disables that.
 - Usage lives in `~/.local/state/lunarzero/quota.json`, so daily caps survive restarts.
-  Config: `pool.{enabled, strategy, fallback, sticky_minutes, exclude, include}`.
+  Config: `pool.{enabled, strategy, fallback, rescue, sticky_minutes, exclude, include, paid}` —
+  pool models are priced at $0 (free tiers); `"paid": true` charges catalog list prices instead.
 
 ## Commands
 

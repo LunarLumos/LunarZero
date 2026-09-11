@@ -467,6 +467,7 @@ pub async fn last_assistant(engine: &Engine, session_id: &str) -> Option<Message
 
 async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationToken) -> anyhow::Result<()> {
     let mut step: u32 = 0;
+    let mut nudges: u32 = 0;
     let mut structured: Option<serde_json::Value> = None;
     loop {
         if cancel.is_cancelled() {
@@ -503,6 +504,19 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 .as_deref()
                 .is_some_and(|f| f != "tool-calls" && f != "unknown");
             if finished && !has_tool_calls && a.parent_id == last_user.id {
+                if a.error.is_none()
+                    && nudges < MAX_PLAN_NUDGES
+                    && a.agent != "plan"
+                    && let Some(open) = open_plan(&engine, &session_id, &last_user.id, a).await
+                {
+                    nudges += 1;
+                    tracing::info!(
+                        "plan has {} open item(s); sending the model back to it",
+                        open.len()
+                    );
+                    push_plan_nudge(&engine, &session_id, &last_user, &open).await?;
+                    continue;
+                }
                 break;
             }
         }
@@ -925,6 +939,139 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
     Ok(())
 }
 
+/// How many times per user turn the model is sent back to its own open plan
+/// items after stopping without a question.
+const MAX_PLAN_NUDGES: u32 = 2;
+
+/// Open todo items when the model stopped mid-plan: the plan is active for
+/// this turn (written now, or the user sent a short "continue/run/fix…"
+/// instruction on top of it), items are pending/in progress, and the model's
+/// last words were a hand-off ("next steps would be…", "I'll wait here")
+/// rather than a question for the user.
+async fn open_plan(
+    engine: &Engine,
+    session_id: &str,
+    user_id: &str,
+    last: &AssistantMessage,
+) -> Option<Vec<Todo>> {
+    let todos = engine.sessions.todos(session_id).await.ok()?;
+    let open: Vec<Todo> = todos
+        .into_iter()
+        .filter(|t| t.status == "pending" || t.status == "in_progress")
+        .collect();
+    if open.is_empty() {
+        return None;
+    }
+    let all = engine.sessions.messages(session_id, None, None).await.ok()?;
+    let text_of = |m: &MessageWithParts, synthetic_too: bool| -> String {
+        m.parts
+            .iter()
+            .filter_map(|p| match &p.kind {
+                PartKind::Text { text, synthetic, .. } if synthetic_too || !synthetic => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let wrote_plan_now = all.iter().any(|m| {
+        matches!(&m.info, Message::Assistant(a) if a.parent_id == user_id)
+            && m.parts
+                .iter()
+                .any(|p| matches!(&p.kind, PartKind::Tool { tool, .. } if tool == "todowrite"))
+    });
+    let user_text = all
+        .iter()
+        .find(|m| m.info.id() == user_id)
+        .map(|m| text_of(m, false))
+        .unwrap_or_default();
+    if !wrote_plan_now && !is_continue_instruction(&user_text) {
+        return None;
+    }
+    let text = text_of(all.iter().find(|m| m.info.id() == last.id)?, true);
+    if ends_with_question(&text) {
+        return None;
+    }
+    Some(open)
+}
+
+/// Whether the model's final words ask the user something (then stopping is right).
+fn ends_with_question(text: &str) -> bool {
+    text.trim_end()
+        .trim_end_matches(['*', '`', ')', '"', '\'', ' '])
+        .ends_with('?')
+}
+
+/// A short imperative follow-up ("continue", "run the tests", "fix it") keeps
+/// an earlier plan active; a fresh question or task does not.
+fn is_continue_instruction(text: &str) -> bool {
+    const VERBS: &[&str] = &[
+        "continue", "go", "run", "test", "fix", "do", "finish", "retry", "resume", "next", "proceed",
+        "build", "deploy", "install", "check", "start", "complete", "keep", "carry", "try", "make",
+    ];
+    let words: Vec<String> = text
+        .split_whitespace()
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_ascii_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .collect();
+    !words.is_empty()
+        && words.len() <= 12
+        && !text.contains('?')
+        && (VERBS.contains(&words[0].as_str()) || words.iter().any(|w| w == "continue" || w == "proceed"))
+}
+
+/// Append a hidden user message listing the open items so the loop runs again.
+async fn push_plan_nudge(
+    engine: &Engine,
+    session_id: &str,
+    last_user: &UserMessage,
+    open: &[Todo],
+) -> anyhow::Result<()> {
+    let cont = UserMessage {
+        id: ids::ascending(Prefix::Message),
+        session_id: session_id.into(),
+        time: UserTime { created: now_ms() },
+        format: None,
+        summary: None,
+        agent: last_user.agent.clone(),
+        model: last_user.model.clone(),
+        system: None,
+        tools: None,
+    };
+    engine
+        .sessions
+        .update_message(Message::User(cont.clone()))
+        .await?;
+    let items = open
+        .iter()
+        .map(|t| format!("- [{}] {}", t.status.replace('_', " "), t.content))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = format!(
+        "Your plan still has open items:\n{items}\n\nKeep working through them now — do the work, don't describe it as next steps. \
+         If an item truly can't be done here, say why in one line and mark it completed or cancelled with todowrite. \
+         Stop only when every item is closed or you need something from the user."
+    );
+    let np = engine.sessions.new_part(
+        session_id,
+        &cont.id,
+        PartKind::Text {
+            text,
+            synthetic: true,
+            ignored: false,
+            time: Some(PartTime {
+                start: now_ms(),
+                end: Some(now_ms()),
+            }),
+            metadata: Some(serde_json::json!({ "plan_continue": true })),
+        },
+    );
+    engine.sessions.update_part(np).await?;
+    Ok(())
+}
+
 /// Generate a short session title from the first exchange using the small model.
 async fn generate_title(
     engine: Arc<Engine>,
@@ -1035,4 +1182,34 @@ async fn generate_title(
         .modify(&session.id, move |s| s.title = title)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod plan_nudge_tests {
+    use super::*;
+
+    #[test]
+    fn question_detection() {
+        assert!(ends_with_question("Which database should I use?"));
+        assert!(ends_with_question("Should I proceed with option B?**"));
+        assert!(!ends_with_question(
+            "I'll wait here - let me know when Docker is up."
+        ));
+        assert!(!ends_with_question(
+            "To finish Phase 7, the next steps would be: run the deploy."
+        ));
+    }
+
+    #[test]
+    fn continue_instructions() {
+        assert!(is_continue_instruction("run the docker and test it"));
+        assert!(is_continue_instruction("continue"));
+        assert!(is_continue_instruction("ok, proceed with phase 7"));
+        assert!(is_continue_instruction("Fix the build errors"));
+        assert!(!is_continue_instruction("what does the matrix export do?"));
+        assert!(!is_continue_instruction("explain the auth flow in detail"));
+        assert!(!is_continue_instruction(
+            "run a full security review of every route, the prisma schema, the auth middleware, the export code and the docker setup"
+        ));
+    }
 }

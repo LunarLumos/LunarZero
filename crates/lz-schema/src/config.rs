@@ -380,6 +380,10 @@ pub struct PoolConfig {
     /// Extra `provider/model` ids to treat as pool members (uses catalog limits when known).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include: Option<Vec<String>>,
+    /// Charge pool models at their catalog list price instead of $0 — set this
+    /// when your keys are on paid plans (default false).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paid: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
