@@ -99,12 +99,13 @@ impl ToolCtx {
         always: Vec<String>,
         metadata: Map<String, Value>,
     ) -> Result<(), PermissionError> {
-        let mut ruleset = self.agent.permission.clone();
-        if let Ok(session) = self.engine.sessions.get(&self.session_id).await
-            && let Some(extra) = session.permission
-        {
-            ruleset.extend(extra);
-        }
+        let session = self.engine.sessions.get(&self.session_id).await.ok();
+        let ruleset = crate::permission::effective(
+            &self.agent.permission,
+            session.as_ref().and_then(|s| s.mode),
+            &self.engine.agents().user_rules,
+            session.as_ref().and_then(|s| s.permission.as_ref()),
+        );
         self.engine
             .permissions
             .ask(AskInput {

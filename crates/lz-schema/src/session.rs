@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::permission::Ruleset;
+use crate::permission::{PermissionMode, Ruleset};
 
 pub type SessionId = String;
 pub type MessageId = String;
@@ -140,6 +140,9 @@ pub struct SessionInfo {
     pub time: SessionTime,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permission: Option<Ruleset>,
+    /// Live permission mode (manual / accept-edits / auto / plan).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<PermissionMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revert: Option<SessionRevert>,
 }
@@ -758,6 +761,9 @@ pub struct PromptRequest {
     pub format: Option<OutputFormat>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_reply: bool,
+    /// Permission mode to run this (and later) turns under.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<PermissionMode>,
     pub parts: Vec<PartInput>,
 }
 

@@ -809,6 +809,27 @@ impl EngineApi for Engine {
             .await
             .map_err(storage_err)
     }
+    async fn set_mode(
+        &self,
+        id: &str,
+        mode: lz_schema::permission::PermissionMode,
+    ) -> ApiResult<SessionInfo> {
+        let info = self
+            .sessions
+            .modify(id, move |s| s.mode = Some(mode))
+            .await
+            .map_err(storage_err)?;
+        // requests already waiting that the new mode would have allowed
+        for p in self.permissions.pending() {
+            if p.session_id == id && mode.covers(&p.permission) {
+                let _ = self
+                    .permissions
+                    .reply(&p.id, lz_schema::session::PermissionReply::Once, None)
+                    .await;
+            }
+        }
+        Ok(info)
+    }
     async fn delete_session(&self, id: &str) -> ApiResult<()> {
         self.runner.abort(id).await;
         self.sessions.delete(id).await.map_err(storage_err)

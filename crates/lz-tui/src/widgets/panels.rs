@@ -180,7 +180,7 @@ impl PermissionPanel {
                 },
             ),
             Span::styled(
-                "   ←/→ tab · enter · a/y once · A always · n/esc reject · r reject with reason · ctrl+f full",
+                "   ←/→ tab · enter · a/y once · A always · n/esc reject · r reason · shift+tab mode · ctrl+f full",
                 theme.muted(),
             ),
         ]);

@@ -61,6 +61,7 @@ pub enum SelectKind {
     Commands,
     Fork,
     Export,
+    Modes,
 }
 
 pub struct SelectDialog {

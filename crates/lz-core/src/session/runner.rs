@@ -241,6 +241,14 @@ pub async fn prompt(
             })
             .await?;
     }
+    if let Some(mode) = req.mode
+        && session.mode != Some(mode)
+    {
+        engine
+            .sessions
+            .modify(session_id, move |s| s.mode = Some(mode))
+            .await?;
+    }
     if let Some(tools) = &req.tools {
         // per-prompt tool toggles become a session-level ruleset
         let mut rules = Vec::new();
@@ -701,11 +709,14 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
             .update_message(Message::Assistant(assistant.clone()))
             .await?;
 
-        // tools
-        let mut ruleset = agent.permission.clone();
-        if let Some(extra) = &session.permission {
-            ruleset.extend(extra.iter().cloned());
-        }
+        // tools: agent rules → permission mode → the user's own config again
+        // (explicit allow/deny lists beat the mode) → the session's rules
+        let ruleset = crate::permission::effective(
+            &agent.permission,
+            session.mode,
+            &agents.user_rules,
+            session.permission.as_ref(),
+        );
         let bypass_agent_check = msgs
             .iter()
             .rev()

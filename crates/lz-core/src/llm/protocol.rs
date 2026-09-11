@@ -11,6 +11,8 @@ pub struct WireRequest {
     /// Path appended to the provider base URL, e.g. `/chat/completions`.
     pub path: String,
     pub body: Value,
+    /// Extra request headers the wire format needs (e.g. an API version).
+    pub headers: Vec<(String, String)>,
 }
 
 pub trait StreamParser: Send {
@@ -24,6 +26,10 @@ pub trait Protocol: Send + Sync {
     fn id(&self) -> &'static str;
     fn build(&self, req: &LlmRequest) -> Result<WireRequest, LlmError>;
     fn parser(&self) -> Box<dyn StreamParser>;
+    /// How the API key travels; bearer token unless the wire format says otherwise.
+    fn auth_headers(&self, key: &str) -> Vec<(String, String)> {
+        vec![("authorization".into(), format!("Bearer {key}"))]
+    }
 }
 
 /// Shared open/close bookkeeping so every protocol emits the same lifecycle

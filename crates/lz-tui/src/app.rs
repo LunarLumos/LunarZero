@@ -10,6 +10,7 @@ use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent, KeyEventKind, KeyM
 use lz_schema::Event;
 use lz_schema::api::*;
 use lz_schema::config::TuiConfig;
+use lz_schema::permission::PermissionMode;
 use lz_schema::session::*;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -43,6 +44,8 @@ pub struct TuiOptions {
     pub version: String,
     /// URL of the in-process web portal, if it started.
     pub web_url: Option<String>,
+    /// Start in the given permission mode (`--auto` → auto, `--accept-edits`, `--plan`).
+    pub mode: Option<PermissionMode>,
 }
 
 pub struct Bootstrap {
@@ -143,6 +146,10 @@ pub struct App {
     booted: bool,
     /// Enter was pressed before providers arrived; submit right after boot.
     queued_submit: bool,
+    /// Live permission mode, cycled with shift+tab.
+    perm_mode: PermissionMode,
+    /// Agent to return to when leaving plan mode.
+    agent_before_plan: Option<String>,
     scroll_speed: u16,
     pub area: Rect,
     /// Right-hand column used for notifications (sidebar when shown).
@@ -177,6 +184,10 @@ const SLASH: &[(&str, &str)] = &[
         "Resume the interrupted turn from its last step (also: /resume, /continue)",
     ),
     ("web", "Open the web portal (keys, pool, settings, chat)"),
+    (
+        "mode",
+        "Permission mode: manual · accept edits · auto · plan (shift+tab cycles)",
+    ),
     (
         "install",
         "Install a skill (or --mcp server) from GitHub / npm: / pypi:",
@@ -268,6 +279,8 @@ impl App {
             attention,
             booted: false,
             queued_submit: false,
+            perm_mode: opts.mode.unwrap_or_default(),
+            agent_before_plan: None,
             scroll_speed: opts.tui.scroll_speed.unwrap_or(3).max(1),
             area: Rect::default(),
             notify_area: None,
@@ -1067,6 +1080,10 @@ impl App {
                 self.open_agents();
                 true
             }
+            "mode_cycle" => {
+                self.set_mode(self.perm_mode.next());
+                true
+            }
             "agent_cycle" | "agent_cycle_reverse" => {
                 let list = self.primary_agents();
                 if list.is_empty() {
@@ -1507,6 +1524,7 @@ impl App {
                     model: self.model.clone(),
                     agent: Some(self.agent.clone()),
                     variant: self.variant.clone(),
+                    mode: Some(self.perm_mode),
                     parts,
                     ..Default::default()
                 };
@@ -1755,6 +1773,11 @@ impl App {
                 }
             }
             "retry" | "resume" | "continue" => self.resume_turn(),
+            "mode" => match PermissionMode::parse(args) {
+                Some(m) => self.set_mode(m),
+                None if args.trim().is_empty() => self.open_modes(),
+                None => self.toast(ToastKind::Error, "Modes: manual, accept-edits, auto, plan"),
+            },
             "web" => match self.web_url.clone() {
                 Some(url) => {
                     crate::clipboard::copy(&url);
@@ -2113,10 +2136,13 @@ impl App {
                 } else {
                     String::new()
                 };
+                let paid = matches!(p.id.as_str(), "anthropic" | "openai");
                 let cat = if p.connected {
                     "Connected"
                 } else if p.free {
                     "Free tier — get a key in a minute"
+                } else if paid {
+                    "Claude & ChatGPT — paid API key"
                 } else {
                     "Other providers"
                 };
@@ -2136,6 +2162,7 @@ impl App {
             (
                 i.category != "Connected",
                 i.category != "Free tier — get a key in a minute",
+                i.category != "Claude & ChatGPT — paid API key",
                 i.label.clone(),
             )
         });
@@ -2163,6 +2190,48 @@ impl App {
         let mut d = SelectDialog::new(SelectKind::Agents, "Agents", items);
         d.select_value(&self.agent.clone());
         self.dialogs.push(Dialog::Select(d));
+    }
+
+    fn open_modes(&mut self) {
+        let items: Vec<SelectItem> = PermissionMode::ALL
+            .iter()
+            .map(|m| {
+                SelectItem::new(m.id(), m.label())
+                    .desc(m.describe())
+                    .hint(if *m == self.perm_mode { "●" } else { "" })
+            })
+            .collect();
+        let mut d = SelectDialog::new(SelectKind::Modes, "Permission mode", items)
+            .with_footer("shift+tab cycles modes from the prompt");
+        d.select_value(self.perm_mode.id());
+        self.dialogs.push(Dialog::Select(d));
+    }
+
+    /// Switch the live permission mode: pins/unpins the plan agent, tells the
+    /// engine (which approves pending requests the mode now covers).
+    fn set_mode(&mut self, mode: PermissionMode) {
+        let previous = self.perm_mode;
+        self.perm_mode = mode;
+        if let Some(agent) = mode.agent() {
+            if self.agent != agent {
+                self.agent_before_plan = Some(self.agent.clone());
+                self.agent = agent.to_string();
+            }
+        } else if previous.agent().is_some()
+            && let Some(back) = self.agent_before_plan.take()
+        {
+            self.agent = back;
+        }
+        if let Some(sid) = self.session.clone() {
+            let api = self.api.clone();
+            self.spawn(async move {
+                api.set_mode(&sid, mode).await?;
+                Ok(None)
+            });
+        }
+        if previous != mode {
+            self.toast(ToastKind::Info, format!("{} — {}", mode.label(), mode.describe()));
+        }
     }
 
     fn open_variants(&mut self) {
@@ -2651,6 +2720,11 @@ impl App {
                     action: InputAction::ProviderKey(item.value),
                 }));
             }
+            SelectKind::Modes => {
+                if let Some(m) = PermissionMode::parse(&item.value) {
+                    self.set_mode(m);
+                }
+            }
             SelectKind::Agents => {
                 let is_primary = self.store.agents.iter().any(|a| {
                     a.name == item.value && !matches!(a.mode, lz_schema::config::AgentMode::Subagent)
@@ -2816,7 +2890,10 @@ impl App {
             return;
         }
         match k.code {
-            KeyCode::Left | KeyCode::BackTab | KeyCode::Char('h') => self.perm.prev(),
+            // shift+tab keeps its global meaning here: switching to a mode that
+            // covers this request approves it
+            KeyCode::BackTab => self.set_mode(self.perm_mode.next()),
+            KeyCode::Left | KeyCode::Char('h') => self.perm.prev(),
             KeyCode::Right | KeyCode::Tab | KeyCode::Char('l') => self.perm.next(),
             KeyCode::Up | KeyCode::Char('k') => self.perm.scroll = self.perm.scroll.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => self.perm.scroll = self.perm.scroll.saturating_add(1),
@@ -3207,7 +3284,7 @@ impl App {
             .unwrap_or_else(|| "lz web".into());
         let onboarding = [
             "No model connected yet — pick any one of these:".to_string(),
-            "  /connect      paste a free API key (Groq, Cerebras, Google AI Studio, OpenRouter… a minute each, no card)".to_string(),
+            "  /connect      paste an API key — free tiers (Groq, Cerebras, Google AI Studio, OpenRouter…) or Claude / OpenAI".to_string(),
             format!("  {portal}   the portal's API keys tab has the signup links"),
             "  local         start Ollama or LM Studio — it is picked up automatically".to_string(),
             "  terminal      lz setup   (guided)".to_string(),
@@ -3298,6 +3375,12 @@ impl App {
                 None => name,
             }
         });
+        let mode_color = match self.perm_mode {
+            PermissionMode::Manual => "textMuted",
+            PermissionMode::AcceptEdits => "success",
+            PermissionMode::Auto => "warning",
+            PermissionMode::Plan => "info",
+        };
         let mut left = vec![
             Span::styled(
                 format!(" {} ", self.agent),
@@ -3306,7 +3389,11 @@ impl App {
                     .fg(theme.color("background"))
                     .add_modifier(Modifier::BOLD),
             ),
-            Span::raw(" "),
+            Span::styled(
+                format!(" {} ", self.perm_mode.label()),
+                theme.fg(mode_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("· ", theme.muted()),
         ];
         match model {
             Some(m) => left.push(Span::styled(m, theme.text())),

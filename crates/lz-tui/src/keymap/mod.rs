@@ -190,7 +190,12 @@ pub const DEFAULTS: &[(&str, &str, &str)] = &[
     ("provider_connect", "none", "Connect provider"),
     ("agent_list", "<leader>a", "List agents"),
     ("agent_cycle", "tab", "Next agent"),
-    ("agent_cycle_reverse", "shift+tab", "Previous agent"),
+    ("agent_cycle_reverse", "none", "Previous agent"),
+    (
+        "mode_cycle",
+        "shift+tab",
+        "Cycle permission mode (manual → accept edits → auto → plan)",
+    ),
     ("variant_cycle", "ctrl+t", "Cycle model variants"),
     (
         "messages_page_up",

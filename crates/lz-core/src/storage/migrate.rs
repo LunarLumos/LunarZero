@@ -84,6 +84,8 @@ const MIGRATIONS: &[&str] = &[
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
     );",
+    // 2: live permission mode per session
+    "ALTER TABLE session ADD COLUMN mode TEXT;",
 ];
 
 pub fn apply(conn: &mut Connection) -> StorageResult<()> {

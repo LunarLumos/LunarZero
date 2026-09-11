@@ -285,6 +285,7 @@ impl Protocol for OpenAiChat {
         Ok(WireRequest {
             path: PATH.into(),
             body: Value::Object(body),
+            headers: Vec::new(),
         })
     }
 

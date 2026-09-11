@@ -34,9 +34,10 @@ pub async fn exec() -> anyhow::Result<i32> {
             )
         })
         .collect();
-    choices.push("openai                   paid (OPENAI_API_KEY)".into());
+    choices.push("anthropic                Claude — paid API key (ANTHROPIC_API_KEY)".into());
+    choices.push("openai                   ChatGPT / GPT models — paid API key (OPENAI_API_KEY)".into());
     choices.push(
-        "anthropic-compatible…    any other OpenAI-compatible provider (configure in lunarzero.json)".into(),
+        "openai-compatible…       any other OpenAI-compatible provider (configure in lunarzero.json)".into(),
     );
     choices.push("local                    I run Ollama / LM Studio on this machine".into());
     let pick = inquire::Select::new("Which provider do you want to connect first?", choices)
@@ -50,7 +51,7 @@ pub async fn exec() -> anyhow::Result<i32> {
         engine.shutdown().await;
         return Ok(0);
     }
-    if id.starts_with("anthropic-compatible") {
+    if id.starts_with("openai-compatible") {
         println!(
             "\nAdd to lunarzero.json:\n{}",
             serde_json::to_string_pretty(
@@ -60,14 +61,32 @@ pub async fn exec() -> anyhow::Result<i32> {
         engine.shutdown().await;
         return Ok(0);
     }
-    if let Some(p) = cat.providers.get(&id) {
-        println!("\n{}: {}\nSignup / API keys: {}", p.name, p.note, p.signup);
+    let signup = cat
+        .providers
+        .get(&id)
+        .map(|p| (p.name.clone(), p.note.clone(), p.signup.clone()))
+        .or_else(|| {
+            lz_core::provider::paid_signup(&id).map(|url| match id.as_str() {
+                "anthropic" => (
+                    "Anthropic".to_string(),
+                    "Claude models; usage is billed".to_string(),
+                    url.to_string(),
+                ),
+                _ => (
+                    "OpenAI".to_string(),
+                    "GPT models; usage is billed".to_string(),
+                    url.to_string(),
+                ),
+            })
+        });
+    if let Some((name, note, url)) = signup {
+        println!("\n{name}: {note}\nSignup / API keys: {url}");
         let open = inquire::Confirm::new("Open the signup page in your browser?")
             .with_default(true)
             .prompt()
             .unwrap_or(false);
         if open {
-            lz_web::open_browser(&p.signup);
+            lz_web::open_browser(&url);
         }
     }
     let key = inquire::Password::new("Paste the API key:")

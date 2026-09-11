@@ -160,9 +160,16 @@ async fn run(
         .json(&wire.body)
         .header("accept", "text/event-stream");
     if let Some(key) = &endpoint.api_key {
-        builder = builder.bearer_auth(key);
+        for (k, v) in protocol.auth_headers(key) {
+            builder = builder.header(k, v);
+        }
     }
-    for (k, v) in endpoint.headers.iter().chain(req.headers.iter()) {
+    for (k, v) in wire
+        .headers
+        .iter()
+        .chain(endpoint.headers.iter())
+        .chain(req.headers.iter())
+    {
         builder = builder.header(k, v);
     }
     tracing::debug!(url, model = req.model_id, "llm request");

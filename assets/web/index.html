@@ -104,6 +104,7 @@
         <div class="head">
           <b id="chat-title" style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">No session — send a message to start one</b>
           <span id="chat-stats" class="muted" style="font-size:12px"></span>
+          <select id="mode-select" title="permission mode"><option value="manual">manual — ask before edits &amp; commands</option><option value="accept-edits">accept edits — commands still ask</option><option value="auto">auto — never ask</option><option value="plan">plan — read-only</option></select>
           <select id="agent-select" title="agent"></select>
           <select id="model-select" title="model" style="max-width:260px"></select>
           <button id="abort" class="danger" style="display:none">stop</button>
@@ -254,6 +255,11 @@ async function loadMeta() {
 }
 $('#model-select').onchange = e => localStorage.setItem('lz-model', e.target.value);
 $('#agent-select').onchange = e => localStorage.setItem('lz-agent', e.target.value);
+$('#mode-select').value = localStorage.getItem('lz-mode') || 'manual';
+$('#mode-select').onchange = async e => {
+  localStorage.setItem('lz-mode', e.target.value);
+  if (chat.session) { try { await api('/session/' + chat.session + '/mode', { method: 'POST', body: JSON.stringify({ mode: e.target.value }) }); toast('mode: ' + e.target.value); } catch (err) { toast(err.message, true); } }
+};
 async function loadSessions() {
   const list = await api('/sessions');
   $('#sess-list').innerHTML = list.map(s => `<div class="item ${s.id === chat.session ? 'active' : ''}" data-id="${esc(s.id)}"><div class="t"><span class="dot ${s.busy ? 'busy' : 'off'}"></span>${esc(s.title)}</div><div class="m">${esc(s.model || '')} · ${ago(s.updated)}</div></div>`).join('') || '<div class="item muted">no sessions yet</div>';
@@ -340,7 +346,7 @@ async function send() {
   const text = $('#prompt').value.trim(); if (!text) return;
   try {
     if (!chat.session) { const s = await api('/session', { method: 'POST', body: JSON.stringify({ agent: $('#agent-select').value || null }) }); await openSession(s.id); }
-    await api('/session/' + chat.session + '/prompt', { method: 'POST', body: JSON.stringify({ text, model: $('#model-select').value || null, agent: $('#agent-select').value || null }) });
+    await api('/session/' + chat.session + '/prompt', { method: 'POST', body: JSON.stringify({ text, model: $('#model-select').value || null, agent: $('#agent-select').value || null, mode: $('#mode-select').value || null }) });
     $('#prompt').value = ''; chat.follow = true; chat.busy = true; render();
   } catch (e) { toast(e.message, true); }
 }

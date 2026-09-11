@@ -49,6 +49,7 @@ pub fn max_output_tokens(model: &Model) -> u64 {
 fn reasoning_effort(model: &Model, effort: &str) -> Option<Map<String, Value>> {
     let obj = match model.npm.as_str() {
         "@openrouter/ai-sdk-provider" => json!({ "reasoning": { "effort": effort } }),
+        "@ai-sdk/anthropic" => json!({ "effort": effort }),
         _ => json!({ "reasoningEffort": effort }),
     };
     obj.as_object().cloned()
@@ -104,6 +105,10 @@ pub fn provider_options(model: &Model, variant: Option<&str>) -> Map<String, Val
     }
     let mut out = Map::new();
     if !openai.is_empty() {
+        if model.npm == "@ai-sdk/anthropic" {
+            out.insert("anthropic".into(), Value::Object(openai));
+            return out;
+        }
         // OpenRouter uses a top-level `reasoning` body field; pass it raw.
         if let Some(reasoning) = openai.remove("reasoning") {
             out.insert("raw".into(), json!({ "reasoning": reasoning }));

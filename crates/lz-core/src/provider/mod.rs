@@ -177,6 +177,16 @@ pub fn protocol_for(npm: &str) -> Option<&'static str> {
         | "@openrouter/ai-sdk-provider"
         | "@ai-sdk/azure"
         | "@ai-sdk/deepseek" => Some("openai-chat"),
+        "@ai-sdk/anthropic" => Some("anthropic-messages"),
+        _ => None,
+    }
+}
+
+/// Where to get a key for the big paid APIs (shown by `/connect` and `lz setup`).
+pub fn paid_signup(provider_id: &str) -> Option<&'static str> {
+    match provider_id {
+        "anthropic" => Some("https://console.anthropic.com/settings/keys"),
+        "openai" => Some("https://platform.openai.com/api-keys"),
         _ => None,
     }
 }
@@ -515,6 +525,8 @@ impl Registry {
             return Some(m);
         }
         let preferred = [
+            ("anthropic", "claude-sonnet-4-6"),
+            ("anthropic", "claude-sonnet-4-5"),
             ("openai", "gpt-5"),
             ("openai", "gpt-4.1"),
             ("openai", "gpt-4o"),
@@ -571,7 +583,7 @@ impl Registry {
         let provider = self.providers.get(&model.provider_id).ok_or("unknown provider")?;
         let protocol_id = model.protocol.ok_or_else(|| {
             format!(
-                "provider package {} is not supported yet (only OpenAI-compatible providers)",
+                "provider package {} is not supported yet (OpenAI-compatible and Anthropic APIs are)",
                 model.npm
             )
         })?;
@@ -617,7 +629,9 @@ impl Registry {
                     source: p.source.to_string(),
                     connected,
                     free: pool_p.is_some(),
-                    signup: pool_p.map(|f| f.signup.clone()),
+                    signup: pool_p
+                        .map(|f| f.signup.clone())
+                        .or_else(|| paid_signup(&p.id).map(str::to_string)),
                     env: pool_p
                         .map(|f| f.env.clone())
                         .or_else(|| known.get(&p.id).map(|c| c.env.clone()))

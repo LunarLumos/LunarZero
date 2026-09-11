@@ -52,6 +52,9 @@ fn row_to_session(r: &rusqlite::Row<'_>) -> rusqlite::Result<SessionInfo> {
         tokens: parse_opt(r.get("tokens")?),
         metadata: parse_opt(r.get("metadata")?),
         permission: parse_opt(r.get("permission")?),
+        mode: r
+            .get::<_, Option<String>>("mode")?
+            .and_then(|m| lz_schema::permission::PermissionMode::parse(&m)),
         revert: parse_opt(r.get("revert")?),
         time: SessionTime {
             created: r.get::<_, i64>("time_created")? as u64,
@@ -62,18 +65,18 @@ fn row_to_session(r: &rusqlite::Row<'_>) -> rusqlite::Result<SessionInfo> {
     })
 }
 
-const SESSION_COLS: &str = "id, project_id, parent_id, slug, directory, title, version, agent, model, summary, cost, tokens, metadata, permission, revert, time_created, time_updated, time_compacting, time_archived";
+const SESSION_COLS: &str = "id, project_id, parent_id, slug, directory, title, version, agent, model, summary, cost, tokens, metadata, permission, revert, time_created, time_updated, time_compacting, time_archived, mode";
 
 pub fn upsert_session(conn: &Connection, s: &SessionInfo) -> StorageResult<()> {
     conn.execute(
         &format!(
-            "INSERT INTO session ({SESSION_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)
+            "INSERT INTO session ({SESSION_COLS}) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)
              ON CONFLICT(id) DO UPDATE SET
                project_id=excluded.project_id, parent_id=excluded.parent_id, slug=excluded.slug, directory=excluded.directory,
                title=excluded.title, version=excluded.version, agent=excluded.agent, model=excluded.model, summary=excluded.summary,
                cost=excluded.cost, tokens=excluded.tokens, metadata=excluded.metadata, permission=excluded.permission,
                revert=excluded.revert, time_created=excluded.time_created, time_updated=excluded.time_updated,
-               time_compacting=excluded.time_compacting, time_archived=excluded.time_archived"
+               time_compacting=excluded.time_compacting, time_archived=excluded.time_archived, mode=excluded.mode"
         ),
         params![
             s.id,
@@ -95,6 +98,7 @@ pub fn upsert_session(conn: &Connection, s: &SessionInfo) -> StorageResult<()> {
             s.time.updated as i64,
             s.time.compacting.map(|v| v as i64),
             s.time.archived,
+            s.mode.map(|m| m.id()),
         ],
     )?;
     Ok(())
@@ -401,6 +405,7 @@ mod tests {
                 archived: None,
             },
             permission: None,
+            mode: None,
             revert: None,
         }
     }

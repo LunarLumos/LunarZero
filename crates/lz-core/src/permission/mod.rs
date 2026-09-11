@@ -54,6 +54,28 @@ pub fn disabled(tools: &[&str], ruleset: &Ruleset) -> Vec<String> {
         .collect()
 }
 
+/// The effective ruleset for a session: agent rules → permission mode → the
+/// user's own config again (explicit allow/deny lists beat the mode) → the
+/// session's rules. Last match wins.
+pub fn effective(
+    agent_rules: &Ruleset,
+    mode: Option<lz_schema::permission::PermissionMode>,
+    user_rules: &Ruleset,
+    session_rules: Option<&Ruleset>,
+) -> Ruleset {
+    let mut ruleset = agent_rules.clone();
+    if let Some(mode) = mode {
+        ruleset.extend(mode.rules());
+        if mode.keeps_user_rules() {
+            ruleset.extend(user_rules.iter().cloned());
+        }
+    }
+    if let Some(extra) = session_rules {
+        ruleset.extend(extra.iter().cloned());
+    }
+    ruleset
+}
+
 pub fn merge(rulesets: &[&Ruleset]) -> Ruleset {
     rulesets.iter().flat_map(|r| r.iter().cloned()).collect()
 }

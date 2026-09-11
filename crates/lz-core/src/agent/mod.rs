@@ -70,6 +70,9 @@ impl Agent {
 
 pub struct Agents {
     pub agents: BTreeMap<String, Agent>,
+    /// The user's own `permission` config, kept apart so a permission mode
+    /// can tighten the defaults without overriding explicit user choices.
+    pub user_rules: lz_schema::permission::Ruleset,
 }
 
 fn parse_model(s: &str) -> Option<ModelRef> {
@@ -302,7 +305,10 @@ pub fn build(raw_config: &Map<String, Value>, paths: &Paths, worktree: &Path) ->
             }
         }
     }
-    Agents { agents }
+    Agents {
+        agents,
+        user_rules: user,
+    }
 }
 
 fn pathdiff(base: &Path, target: &Path) -> Option<String> {

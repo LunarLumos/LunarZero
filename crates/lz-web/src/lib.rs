@@ -78,6 +78,7 @@ pub async fn start(engine: Arc<lz_core::Engine>, port: u16, version: &str) -> an
         .route("/session/{id}/prompt", post(session_prompt))
         .route("/session/{id}/abort", post(session_abort))
         .route("/session/{id}/resume", post(session_resume))
+        .route("/session/{id}/mode", post(session_mode))
         .route("/permission/{id}", post(permission_reply))
         .route("/question/{id}", post(question_reply))
         .route("/agents", get(agents))
@@ -502,6 +503,8 @@ struct PromptBody {
     model: Option<String>,
     agent: Option<String>,
     variant: Option<String>,
+    /// manual | accept-edits | auto | plan
+    mode: Option<String>,
 }
 
 async fn session_prompt(
@@ -569,10 +572,18 @@ async fn session_prompt(
             return Ok(Json(json!({ "ok": true })));
         }
     }
+    let mode = b
+        .mode
+        .as_deref()
+        .and_then(lz_schema::permission::PermissionMode::parse);
     let req = PromptRequest {
         model,
-        agent: b.agent.filter(|a| !a.is_empty()),
+        agent: b
+            .agent
+            .filter(|a| !a.is_empty())
+            .or_else(|| mode.and_then(|m| m.agent()).map(str::to_string)),
         variant: b.variant,
+        mode,
         parts: vec![PartInput::Text {
             id: None,
             text,
@@ -583,6 +594,25 @@ async fn session_prompt(
     };
     s.engine.prompt_async(&id, req).await.map_err(err)?;
     Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize)]
+struct ModeBody {
+    mode: String,
+}
+
+/// Switch the live permission mode of a session (pending requests the mode
+/// covers are approved, like shift+tab in the terminal).
+async fn session_mode(
+    State(s): St,
+    Path(id): Path<String>,
+    Json(b): Json<ModeBody>,
+) -> Result<Json<Value>, ApiErr> {
+    let Some(mode) = lz_schema::permission::PermissionMode::parse(&b.mode) else {
+        return Err(err("mode must be manual, accept-edits, auto or plan"));
+    };
+    let info = s.engine.set_mode(&id, mode).await.map_err(err)?;
+    Ok(Json(json!({ "ok": true, "mode": mode.id(), "session": info })))
 }
 
 #[derive(serde::Deserialize, Default)]

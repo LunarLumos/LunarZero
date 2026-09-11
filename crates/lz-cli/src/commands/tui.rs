@@ -63,6 +63,13 @@ pub async fn exec(args: TuiArgs) -> anyhow::Result<i32> {
         kv_path: paths.kv(),
         version: VERSION.to_string(),
         web_url: portal.as_ref().map(|p| p.url.clone()),
+        mode: if args.auto {
+            Some(lz_schema::permission::PermissionMode::Auto)
+        } else {
+            args.mode
+                .as_deref()
+                .and_then(lz_schema::permission::PermissionMode::parse)
+        },
     };
     let api: Arc<dyn EngineApi> = engine.clone();
     let result = lz_tui::run(api, opts).await;

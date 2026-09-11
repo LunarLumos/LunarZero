@@ -93,6 +93,7 @@ impl SessionService {
                 archived: None,
             },
             permission,
+            mode: None,
             revert: None,
         };
         let s = info.clone();

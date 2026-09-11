@@ -333,6 +333,9 @@ pub trait EngineApi: Send + Sync + 'static {
     async fn get_session(&self, id: &str) -> ApiResult<SessionInfo>;
     async fn create_session(&self, opts: CreateSession) -> ApiResult<SessionInfo>;
     async fn update_session(&self, id: &str, patch: SessionPatch) -> ApiResult<SessionInfo>;
+    /// Switch the session's permission mode; pending requests the new mode
+    /// covers are approved.
+    async fn set_mode(&self, id: &str, mode: crate::permission::PermissionMode) -> ApiResult<SessionInfo>;
     async fn delete_session(&self, id: &str) -> ApiResult<()>;
     async fn children(&self, id: &str) -> ApiResult<Vec<SessionInfo>>;
     async fn messages(&self, id: &str, q: MessagesQuery) -> ApiResult<Vec<MessageWithParts>>;

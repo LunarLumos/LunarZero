@@ -53,6 +53,9 @@ pub struct TuiArgs {
     /// Auto-approve every permission request
     #[arg(long, visible_alias = "yolo", alias = "dangerously-skip-permissions")]
     pub auto: bool,
+    /// Start in a permission mode: manual | accept-edits | auto | plan (shift+tab cycles in the TUI)
+    #[arg(long, value_name = "MODE")]
+    pub mode: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

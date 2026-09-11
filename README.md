@@ -50,12 +50,16 @@ That installs `lz` (and `lunarzero`). Needs a stable Rust toolchain — `curl ht
 LunarZero ships with no keys and no cloud. Connect a model once, any way you like:
 
 ```sh
-lz setup            # guided: pick a free provider, get a key, verify it
-lz auth login groq  # or paste a key directly (Groq, Cerebras, Google AI Studio, OpenRouter, …)
-lz                  # or type /connect in the TUI, or use the portal's API-keys tab
+lz setup                 # guided: pick a provider, get a key, verify it
+lz auth login groq       # a free tier (Groq, Cerebras, Google AI Studio, OpenRouter, …)
+lz auth login anthropic  # or your Claude API key   → anthropic/claude-sonnet-4-6, claude-opus-…
+lz auth login openai     # or your ChatGPT/OpenAI key → openai/gpt-5, gpt-4.1, …
+lz                       # or type /connect in the TUI, or use the portal's API-keys tab
 ```
 
-Running Ollama or LM Studio? It's detected automatically. Then:
+Claude talks its native Messages API (thinking blocks, tool use, prompt caching); OpenAI and
+everything OpenAI-compatible use chat completions. Running Ollama or LM Studio? It's detected
+automatically. Then:
 
 ```sh
 lz                                  # open the TUI in the current project
@@ -109,6 +113,22 @@ lz recommend                                                # curated servers & 
 
 …or just tell the agent *"install the skill at &lt;link&gt;"* — it runs the installer and the skill is live on the next turn, no restart. Ten skills ship inside the binary (`debugging`, `testing`, `git-workflow`, `code-review`, `refactoring`, `performance`, `security-review`, `codebase-map`, `api-design`, `release`) and load only when the prompt calls for them. MCP tools are sent to the model only when the prompt relates to them, so a dozen servers cost nothing until used.
 
+## Permission modes
+
+Press **`shift+tab`** to cycle, `/mode <name>` to jump, `--mode <name>` to start there. The current
+mode sits next to the agent in the footer, and switching while a request is waiting approves it
+if the new mode covers it.
+
+| Mode | What asks |
+|---|---|
+| **manual** (default) | every file edit and every command |
+| **accept edits** | edits, writes and patches go through; commands still ask |
+| **auto** | nothing — same as `--auto` |
+| **plan** | read-only research with the `plan` agent; no edits at all |
+
+Modes sit between the agent's rules and your own `permission` config, so an explicit allow-list
+(`"bash": {"git status": "allow"}`) or deny keeps working in every mode.
+
 ## It finishes what it starts
 
 - **Plans in the sidebar** — for anything with three or more steps the agent writes a plan you can watch; if it stops with items open and hands them back as "next steps", it is sent straight back to them.
@@ -129,7 +149,7 @@ lz recommend                                                # curated servers & 
 
 | Command | |
 |---|---|
-| `lz [project] [-m model] [-c] [-s id] [--agent name] [--auto]` | TUI |
+| `lz [project] [-m model] [-c] [-s id] [--agent name] [--mode m] [--auto]` | TUI |
 | `lz run [message..] [--format text\|json] [-c] [--model] [--auto]` | non-interactive, NDJSON with `--format json` |
 | `lz setup` · `lz auth list\|login\|logout` | connect providers |
 | `lz pool setup\|list\|status` | the free pool |
@@ -139,9 +159,9 @@ lz recommend                                                # curated servers & 
 | `lz session list\|delete` · `lz export` · `lz import` | sessions |
 | `lz config show\|path\|schema` · `lz completion <shell>` · `lz upgrade` | misc |
 
-**TUI keys** — `enter` send · `shift+enter` newline · `esc` interrupt · `ctrl+p` palette · `tab` cycle agent · `f2` recent model · `ctrl+x` then `n` new · `l` sessions · `m` models · `a` agents · `t` themes · `b` sidebar · `u` undo · `r` redo · `e` editor.
+**TUI keys** — `enter` send · `shift+enter` newline · `esc` interrupt · `shift+tab` permission mode · `ctrl+p` palette · `tab` cycle agent · `f2` recent model · `ctrl+x` then `n` new · `l` sessions · `m` models · `a` agents · `t` themes · `b` sidebar · `u` undo · `r` redo · `e` editor.
 
-**Slash commands** — `/new /sessions /models /agents /themes /connect /skills /install /retry /web /status /compact /undo /redo /fork /rename /export /init /help` plus your own `command/*.md`, skills and MCP prompts.
+**Slash commands** — `/new /sessions /models /agents /mode /themes /connect /skills /install /retry /web /status /compact /undo /redo /fork /rename /export /init /help` plus your own `command/*.md`, skills and MCP prompts.
 
 ## Configuration
 
@@ -183,7 +203,7 @@ cargo build --release    # lto=fat → target/release/lz
 
 ## Roadmap
 
-Native Anthropic/Gemini wire protocols, remote MCP OAuth, attach/remote mode, formatters after edit, Windows.
+Native Gemini wire protocol, remote MCP OAuth, attach/remote mode, formatters after edit, Windows.
 
 ---
 
