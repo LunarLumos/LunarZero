@@ -827,24 +827,43 @@ pub async fn process(input: ProcessInput) -> StepResult {
         let mut failure: Option<LlmError> = None;
         let started = std::time::Instant::now();
         let mut first_token: Option<std::time::Instant> = None;
+        let mut think = crate::llm::think_tags::ThinkTagFilter::default();
         loop {
             tokio::select! {
                 biased;
                 _ = input.cancel.cancelled() => { failure = Some(LlmError::Aborted); break; }
                 Some((call_id, p)) = progress_rx.recv() => { ctx.apply_progress(&call_id, p).await; }
                 ev = rx.recv() => match ev {
-                    None => break,
+                    None => {
+                        for event in think.finish() {
+                            let _ = ctx.handle(event).await;
+                        }
+                        break;
+                    }
                     Some(Ok(event)) => {
                         if first_token.is_none()
                             && matches!(event, LlmEvent::TextDelta { .. } | LlmEvent::ReasoningDelta { .. } | LlmEvent::ToolInputStart { .. } | LlmEvent::ToolCall { .. })
                         {
                             first_token = Some(std::time::Instant::now());
                         }
-                        if let Err(msg) = ctx.handle(event).await {
-                            failure = Some(LlmError::InvalidOutput { message: msg });
-                            break;
+                        // inline <thought>…</thought> → reasoning, flushed before step end
+                        let events = match &event {
+                            LlmEvent::StepFinish { .. } | LlmEvent::Finish { .. } => {
+                                let mut v = think.finish();
+                                v.push(event);
+                                v
+                            }
+                            _ => think.push(event),
+                        };
+                        let mut failed = false;
+                        for event in events {
+                            if let Err(msg) = ctx.handle(event).await {
+                                failure = Some(LlmError::InvalidOutput { message: msg });
+                                failed = true;
+                                break;
+                            }
                         }
-                        if ctx.needs_compaction { break; }
+                        if failed || ctx.needs_compaction { break; }
                     }
                     Some(Err(e)) => { failure = Some(e); break; }
                 },

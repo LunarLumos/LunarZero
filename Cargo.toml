@@ -13,6 +13,7 @@ rust-version = "1.85"
 lz-schema = { path = "crates/lz-schema" }
 lz-core = { path = "crates/lz-core" }
 lz-tui = { path = "crates/lz-tui" }
+lz-web = { path = "crates/lz-web" }
 
 # async
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "signal", "fs", "sync", "time", "io-util"] }

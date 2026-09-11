@@ -41,6 +41,8 @@ pub struct TuiOptions {
     pub theme_dirs: Vec<PathBuf>,
     pub kv_path: PathBuf,
     pub version: String,
+    /// URL of the in-process web portal, if it started.
+    pub web_url: Option<String>,
 }
 
 pub struct Bootstrap {
@@ -135,6 +137,7 @@ pub struct App {
     opts_continue: bool,
     opts_fork: bool,
     version: String,
+    web_url: Option<String>,
     tick: u64,
     attention: bool,
     booted: bool,
@@ -165,7 +168,7 @@ const SLASH: &[(&str, &str)] = &[
     ("init", "Create/update AGENTS.md"),
     ("details", "Toggle tool details"),
     ("thinking", "Toggle thinking blocks"),
-    ("share", "Share (not available in v1)"),
+    ("web", "Open the web portal (keys, pool, settings, chat)"),
     ("exit", "Exit"),
 ];
 
@@ -248,6 +251,7 @@ impl App {
             opts_continue: opts.continue_last,
             opts_fork: opts.fork,
             version: opts.version,
+            web_url: opts.web_url,
             tick: 0,
             attention,
             booted: false,
@@ -1661,7 +1665,26 @@ impl App {
             }
             "details" => self.toggle_details(),
             "thinking" => self.toggle_thinking(),
-            "share" => self.toast(ToastKind::Info, "Sharing is not available in this version"),
+            "web" => match self.web_url.clone() {
+                Some(url) => {
+                    crate::clipboard::copy(&url);
+                    let opener = if cfg!(target_os = "macos") {
+                        "open"
+                    } else {
+                        "xdg-open"
+                    };
+                    let _ = std::process::Command::new(opener)
+                        .arg(&url)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+                    self.toast(ToastKind::Success, format!("Opened {url} (copied to clipboard)"));
+                }
+                None => self.toast(
+                    ToastKind::Info,
+                    "Web portal is off — run `lz web` or set tui.json web.enabled",
+                ),
+            },
             "exit" | "quit" | "q" => self.quit = true,
             _ => return false,
         }
@@ -3116,7 +3139,18 @@ impl App {
         } else {
             dir
         };
-        let right = Span::styled(format!("{dir} "), theme.muted());
+        let right = match &self.web_url {
+            Some(url) => {
+                let full = area.width >= 120;
+                let shown = if full {
+                    url.clone()
+                } else {
+                    url.split("/?").next().unwrap_or(url).to_string()
+                };
+                Span::styled(format!("⌂ {shown}  /web "), theme.fg("accent"))
+            }
+            None => Span::styled(format!("{dir} "), theme.muted()),
+        };
         let left_line = Line::from(left);
         let lw = left_line.width() as u16;
         f.render_widget(

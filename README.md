@@ -73,11 +73,24 @@ lz auth login groq       # or: export GROQ_API_KEY=... (Groq, Cerebras, Google A
 lz auth login cerebras   #     OpenRouter, Mistral, NVIDIA, Hugging Face, GitHub Models, …)
 lz --model lunar/auto    # route every request across your free keys
 lz pool status           # per-model RPM/RPD/TPM/TPD usage, measured latency, cooldowns
-lz web                   # the same in a browser: add/remove keys, watch quotas, reset cooldowns
 ```
 
-`lz web` binds to 127.0.0.1 only and prints a one-time URL with a token; API calls without it
-are refused. It never sends keys anywhere — they go to `~/.local/share/lunarzero/auth.json`.
+## Web portal
+
+Every `lz` session also starts a local web portal — the link is in the terminal footer
+(`⌂ http://127.0.0.1:7411/?token=…`), and `/web` opens it in the browser. It shares the running
+engine, so what you do in one place shows up live in the other:
+
+- **Chat** — send prompts and plans from the browser, watch the answer stream, allow/reject
+  permission requests, answer the agent's questions, stop a run, pick model and agent per message.
+- **API keys** — add or remove provider keys (masked), with signup links for the free tiers.
+- **Pool** — quota bars, measured latency and cooldowns per free model; reset cooldowns.
+- **Settings** — default model/agent, pool strategy, permissions, LSP/snapshots/compaction, theme,
+  portal port — saved to the global or project config and applied immediately; raw file editors
+  for `lunarzero.json` and `tui.json` too.
+
+It binds to 127.0.0.1 only; every API call needs the per-run token from the link. `lz web` runs the
+portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ_WEB=0` turns it off.
 
 - `lunar/auto` picks per request: tool-heavy/agentic work, long prompts and "refactor/debug/…"
   requests go to the highest-quality model that is under its limits, short chat goes to the
@@ -103,7 +116,7 @@ are refused. It never sends keys anywhere — they go to `~/.local/share/lunarze
 | `lz agent list\|create` | agents (built-in + `.lunarzero/agent/*.md`) |
 | `lz mcp list\|add <name> --command … \| --url …` | MCP servers |
 | `lz pool setup\|list\|status` | free-tier pool: providers & keys, models & limits, usage |
-| `lz web [--port 7411] [--no-open]` | local dashboard: API keys, pool usage & cooldowns, sessions, config |
+| `lz web [--port 7411] [--no-open]` | run the web portal on its own (it also starts with the TUI) |
 | `lz session list\|delete`, `lz export`, `lz import` | sessions |
 | `lz config show\|path\|schema` | merged config, paths, JSON schema |
 | `lz completion <shell>`, `lz upgrade [--check]` | misc |
@@ -125,6 +138,7 @@ plus your `command/*.md`, skills and MCP prompts.
 crates/lz-schema   types shared by engine and clients (ids, session/message/part, events, config, EngineApi)
 crates/lz-core     the engine: config, storage (SQLite), providers, tools, permissions, session runner, MCP, LSP
 crates/lz-tui      the terminal UI (depends only on lz-schema + EngineApi)
+crates/lz-web      the local web portal (axum + one embedded page)
 crates/lz-cli      the `lz` binary
 assets/            prompts, palettes, pool catalog, embedded model catalog snapshot, dashboard page
 ```

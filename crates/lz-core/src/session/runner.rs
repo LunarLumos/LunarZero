@@ -935,7 +935,10 @@ async fn generate_title(
             _ => {}
         }
     }
+    let title = crate::llm::think_tags::strip(&title);
     let title = title
+        .trim()
+        .trim_start_matches("Title:")
         .trim()
         .trim_matches('"')
         .lines()

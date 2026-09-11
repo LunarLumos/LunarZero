@@ -6,67 +6,127 @@
 <title>LunarZero</title>
 <style>
   :root { --bg:#0b1020; --surface:#141b2e; --el:#1c2440; --fg:#d7dce8; --muted:#7c8499; --primary:#7aa2ff; --secondary:#c792ea; --accent:#5fd7c4; --red:#ff6b7a; --green:#5fd78a; --yellow:#f0c674; --border:#26304a; }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
-  header { display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:2; }
-  header h1 { font-size:16px; margin:0; letter-spacing:.08em; color:var(--primary); }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:16px; padding:10px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
+  header h1 { font-size:15px; margin:0; letter-spacing:.08em; color:var(--primary); }
   header h1 span { color:var(--muted); font-weight:400; margin-left:8px; letter-spacing:0; }
   nav a { color:var(--muted); text-decoration:none; padding:6px 10px; border-radius:6px; cursor:pointer; }
   nav a.active, nav a:hover { color:var(--fg); background:var(--el); }
-  main { max-width:1100px; margin:0 auto; padding:20px; }
-  section { display:none; } section.active { display:block; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
-  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
-  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
-  .card .v { font-size:22px; font-weight:600; margin-top:4px; }
+  main { flex:1; min-height:0; max-width:1240px; width:100%; margin:0 auto; padding:16px 20px; }
+  section { display:none; height:100%; } section.active { display:block; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px,1fr)); gap:12px; margin-bottom:18px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+  .card .k { color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; }
+  .card .v { font-size:21px; font-weight:600; margin-top:2px; }
   .card .s { color:var(--muted); font-size:12px; }
   table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
   th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
   th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
   tr:last-child td { border-bottom:0; }
-  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; background:var(--muted); }
-  .dot.on { background:var(--green); } .dot.cool { background:var(--yellow); } .dot.off { background:#3a4360; }
+  .dot.on { background:var(--green); } .dot.cool { background:var(--yellow); } .dot.off { background:#3a4360; } .dot.busy { background:var(--primary); animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.3; } }
   .tag { display:inline-block; padding:1px 7px; border-radius:999px; background:var(--el); color:var(--muted); font-size:11px; margin-left:6px; }
   .tag.pool { color:var(--accent); }
   button { background:var(--el); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; font-size:12.5px; }
   button:hover { border-color:var(--primary); } button.primary { background:var(--primary); color:#0b1020; border-color:var(--primary); font-weight:600; }
-  button.danger:hover { border-color:var(--red); color:var(--red); }
-  input[type=password], input[type=text], select { background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; }
+  button.danger:hover { border-color:var(--red); color:var(--red); } button:disabled { opacity:.5; cursor:default; }
+  input, select, textarea { background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; }
+  textarea { width:100%; font-family: ui-monospace, Menlo, monospace; font-size:12.5px; line-height:1.4; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .bar { height:6px; background:var(--el); border-radius:3px; overflow:hidden; min-width:80px; }
-  .bar i { display:block; height:100%; background:var(--accent); }
-  .bar i.warn { background:var(--yellow); } .bar i.full { background:var(--red); }
+  .bar { height:6px; background:var(--el); border-radius:3px; overflow:hidden; min-width:70px; }
+  .bar i { display:block; height:100%; background:var(--accent); } .bar i.warn { background:var(--yellow); } .bar i.full { background:var(--red); }
   .muted { color:var(--muted); } .err { color:var(--red); } .ok { color:var(--green); }
-  #toast { position:fixed; right:20px; bottom:20px; background:var(--surface); border:1px solid var(--border); padding:10px 14px; border-radius:8px; display:none; }
+  #toast { position:fixed; right:20px; bottom:20px; background:var(--surface); border:1px solid var(--border); padding:10px 14px; border-radius:8px; display:none; z-index:9; max-width:420px; }
   a.link { color:var(--primary); }
-  details summary { cursor:pointer; color:var(--muted); }
-  pre { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; overflow:auto; font-size:12.5px; }
-  .toolbar { display:flex; justify-content:space-between; align-items:center; margin:8px 0 12px; gap:8px; flex-wrap:wrap; }
-  h2 { font-size:15px; margin:18px 0 8px; }
+  pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; overflow:auto; font-size:12.5px; margin:8px 0; }
+  code { font-family: ui-monospace, Menlo, monospace; font-size:12.5px; background:var(--el); padding:1px 4px; border-radius:4px; }
+  pre code { background:none; padding:0; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin:6px 0 12px; gap:8px; flex-wrap:wrap; }
+  h2 { font-size:15px; margin:16px 0 8px; } h3 { font-size:13.5px; margin:14px 0 6px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  /* chat */
+  .chat { display:grid; grid-template-columns:260px 1fr; gap:14px; height:100%; }
+  .sess { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:auto; }
+  .sess .item { padding:9px 12px; border-bottom:1px solid var(--border); cursor:pointer; }
+  .sess .item:hover, .sess .item.active { background:var(--el); }
+  .sess .item .t { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sess .item .m { color:var(--muted); font-size:11.5px; }
+  .pane { display:flex; flex-direction:column; min-height:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+  .pane .head { padding:8px 14px; border-bottom:1px solid var(--border); display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .transcript { flex:1; overflow:auto; padding:14px 16px; }
+  .msg { margin-bottom:14px; }
+  .msg.user .body { border-left:3px solid var(--primary); padding-left:10px; font-weight:600; white-space:pre-wrap; }
+  .msg.assistant .body { white-space:normal; }
+  .msg .meta { color:var(--muted); font-size:11.5px; margin-bottom:3px; }
+  .tool { border:1px solid var(--border); border-radius:8px; padding:6px 10px; margin:6px 0; background:var(--bg); }
+  .tool summary { cursor:pointer; }
+  .tool .out { white-space:pre-wrap; color:var(--muted); font-family: ui-monospace, Menlo, monospace; font-size:12px; max-height:260px; overflow:auto; margin-top:6px; }
+  .think { color:var(--muted); font-style:italic; margin:4px 0; }
+  .think summary { cursor:pointer; font-style:normal; }
+  .ask { border:1px solid var(--yellow); border-radius:8px; padding:10px 12px; margin:10px 0; background:var(--bg); }
+  .ask.q { border-color:var(--primary); }
+  .composer { border-top:1px solid var(--border); padding:10px 12px; display:flex; gap:8px; align-items:flex-end; }
+  .composer textarea { flex:1; min-height:44px; max-height:200px; resize:vertical; font-family:inherit; font-size:14px; }
+  .body h1, .body h2, .body h3 { font-size:14.5px; margin:10px 0 4px; } .body ul, .body ol { margin:4px 0 4px 20px; padding:0; } .body p { margin:6px 0; }
+  .body blockquote { border-left:3px solid var(--border); margin:6px 0; padding-left:10px; color:var(--muted); }
+  /* settings */
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px,1fr)); gap:14px; }
+  .form label { display:block; color:var(--muted); font-size:12px; margin:8px 0 3px; }
+  .form select, .form input[type=text], .form input[type=number] { width:100%; }
+  .form .inline { display:flex; gap:10px; align-items:center; margin-top:8px; }
+  details.raw summary { cursor:pointer; color:var(--muted); margin:10px 0 6px; }
 </style>
 </head>
 <body>
 <header>
   <h1>LUNARZERO <span id="version"></span></h1>
   <nav>
-    <a data-tab="overview" class="active">Overview</a>
+    <a data-tab="chat" class="active">Chat</a>
+    <a data-tab="overview">Overview</a>
     <a data-tab="keys">API keys</a>
     <a data-tab="pool">Pool</a>
-    <a data-tab="sessions">Sessions</a>
-    <a data-tab="config">Config</a>
+    <a data-tab="settings">Settings</a>
   </nav>
-  <span class="muted" id="dir" style="margin-left:auto"></span>
+  <span class="muted mono" id="dir" style="margin-left:auto;font-size:12px"></span>
+  <span id="live" class="dot off" title="live events"></span>
 </header>
 <main>
-  <section id="overview" class="active">
+  <section id="chat" class="active">
+    <div class="chat">
+      <div class="sess">
+        <div class="item" style="display:flex;justify-content:space-between;align-items:center"><b>Sessions</b><button id="new-session" class="primary">+ New</button></div>
+        <div id="sess-list"></div>
+      </div>
+      <div class="pane">
+        <div class="head">
+          <b id="chat-title" style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">No session — send a message to start one</b>
+          <span id="chat-stats" class="muted" style="font-size:12px"></span>
+          <select id="agent-select" title="agent"></select>
+          <select id="model-select" title="model" style="max-width:260px"></select>
+          <button id="abort" class="danger" style="display:none">stop</button>
+          <button id="del-session" class="danger" title="delete session">✕</button>
+        </div>
+        <div class="transcript" id="transcript"><p class="muted">Pick a session on the left or type below. Anything you send here also appears live in the terminal, and vice-versa.</p></div>
+        <div id="asks"></div>
+        <div class="composer">
+          <textarea id="prompt" placeholder="Describe the task or plan… (/command, !shell also work)  —  enter to send, shift+enter for a newline"></textarea>
+          <button id="send" class="primary">Send</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="overview">
     <div class="cards" id="ov-cards"></div>
     <h2>Providers</h2>
     <table><thead><tr><th>Provider</th><th>Status</th><th>Models</th><th>Source</th></tr></thead><tbody id="ov-providers"></tbody></table>
   </section>
 
   <section id="keys">
-    <p class="muted">Keys are stored in <span class="mono" id="auth-path"></span> (mode 0600). Environment variables and <span class="mono">provider</span> config entries also connect a provider. Pool providers have free tiers — get a key from the signup link.</p>
+    <p class="muted">Keys are stored in <span class="mono" id="auth-path"></span> (mode 0600) and never leave this machine. Environment variables and <span class="mono">provider</span> config entries also connect a provider. Pool providers have free tiers — use the signup link.</p>
     <div class="toolbar"><input type="text" id="key-filter" placeholder="filter providers…"><label class="muted"><input type="checkbox" id="key-all"> show all providers</label></div>
     <table><thead><tr><th>Provider</th><th>Status</th><th>Env</th><th>Key</th><th></th></tr></thead><tbody id="keys-body"></tbody></table>
   </section>
@@ -74,19 +134,60 @@
   <section id="pool">
     <div class="cards" id="pool-cards"></div>
     <div class="toolbar">
-      <div class="row"><span class="muted">Models with a key are routable by <span class="mono">lunar/auto</span>. Cooldowns clear automatically; reset if a provider is back early.</span></div>
+      <span class="muted">Models with a key are routable by <span class="mono">lunar/auto</span>. Cooldowns clear on their own; reset if a provider is back early.</span>
       <div class="row"><label class="muted"><input type="checkbox" id="pool-all"> show unconnected</label><button id="pool-reset" class="danger">Reset cooldowns</button></div>
     </div>
     <table><thead><tr><th>Model</th><th>Quality</th><th>Speed</th><th>RPM</th><th>RPD</th><th>TPM</th><th>TPD</th><th>Latency</th><th>State</th></tr></thead><tbody id="pool-body"></tbody></table>
   </section>
 
-  <section id="sessions">
-    <table><thead><tr><th>Title</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Updated</th><th></th></tr></thead><tbody id="sess-body"></tbody></table>
-  </section>
-
-  <section id="config">
-    <p class="muted">Merged configuration (global → project → env). Edit <span class="mono">lunarzero.json</span> in the project or <span class="mono" id="cfg-path"></span>; changes apply on the next start.</p>
-    <pre id="cfg"></pre>
+  <section id="settings">
+    <div class="toolbar">
+      <div class="row"><span class="muted">Apply to</span><select id="cfg-scope"><option value="global">global (all projects)</option><option value="project">this project</option></select><span class="mono muted" id="cfg-path"></span></div>
+      <button id="cfg-save" class="primary">Save settings</button>
+    </div>
+    <div class="grid2">
+      <div class="card form">
+        <h3>Models & agent</h3>
+        <label>Default model</label><select id="s-model"></select>
+        <label>Small model (titles, summaries)</label><select id="s-small"></select>
+        <label>Default agent</label><select id="s-agent"></select>
+      </div>
+      <div class="card form">
+        <h3>Free pool (lunar/auto)</h3>
+        <label>Strategy</label><select id="s-strategy"><option value="auto">auto — balance quality, speed, quota</option><option value="smart">smart — best model first</option><option value="fast">fast — quickest model first</option></select>
+        <label>Sticky minutes (keep a session on one model)</label><input type="number" id="s-sticky" min="0" max="240">
+        <div class="inline"><label style="margin:0"><input type="checkbox" id="s-fallback"> fail over inside the pool when a chosen model is rate limited</label></div>
+        <label>Exclude (comma separated: <span class="mono">provider/model</span> or <span class="mono">provider/*</span>)</label><input type="text" id="s-exclude">
+      </div>
+      <div class="card form">
+        <h3>Permissions</h3>
+        <label>File edits</label><select id="s-perm-edit"><option value="">default</option><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
+        <label>Shell commands</label><select id="s-perm-bash"><option value="">default</option><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
+        <label>Web fetch</label><select id="s-perm-web"><option value="">default</option><option value="allow">allow</option><option value="ask">ask</option><option value="deny">deny</option></select>
+        <p class="muted" style="font-size:12px">Per-command rules (e.g. <span class="mono">"bash": {"git *": "allow", "rm *": "ask"}</span>) can be written in the raw file below.</p>
+      </div>
+      <div class="card form">
+        <h3>Engine</h3>
+        <div class="inline"><label style="margin:0"><input type="checkbox" id="s-lsp"> LSP diagnostics after edits</label></div>
+        <div class="inline"><label style="margin:0"><input type="checkbox" id="s-snapshot"> file snapshots (undo/redo)</label></div>
+        <div class="inline"><label style="margin:0"><input type="checkbox" id="s-compact"> automatic context compaction</label></div>
+        <label>Instructions files (comma separated globs)</label><input type="text" id="s-instructions">
+      </div>
+      <div class="card form">
+        <h3>Terminal UI (tui.json)</h3>
+        <label>Theme</label><select id="s-theme"></select>
+        <div class="inline"><label style="margin:0"><input type="checkbox" id="s-web"> start this web portal with the TUI</label></div>
+        <label>Portal port</label><input type="number" id="s-web-port" min="0" max="65535">
+        <p class="muted" style="font-size:12px">Theme and portal settings apply the next time <span class="mono">lz</span> starts.</p>
+      </div>
+      <div class="card form">
+        <h3>Agents</h3>
+        <div id="s-agents" class="muted" style="font-size:12.5px"></div>
+        <p class="muted" style="font-size:12px">Add your own as <span class="mono">.lunarzero/agent/&lt;name&gt;.md</span> (frontmatter = settings, body = system prompt).</p>
+      </div>
+    </div>
+    <h2>Raw files</h2>
+    <div id="raw-files"></div>
   </section>
 </main>
 <div id="toast"></div>
@@ -95,37 +196,179 @@ const token = new URLSearchParams(location.search).get('token') || localStorage.
 if (token) { localStorage.setItem('lz-token', token); history.replaceState(null, '', location.pathname); }
 const api = async (path, opts = {}) => {
   const r = await fetch('/api' + path, { ...opts, headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token, ...(opts.headers || {}) } });
-  if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized — open the dashboard from the URL printed by <span class="mono">lz web</span>.</p></main>'; throw new Error('unauthorized'); }
+  if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized — open the portal from the link shown in the terminal footer (or printed by <span class="mono">lz web</span>).</p></main>'; throw new Error('unauthorized'); }
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.statusText);
   return r.json();
 };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(Math.round(n));
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(Math.round(n||0));
 const ago = ms => { const d = (Date.now()-ms)/1000; return d < 60 ? 'just now' : d < 3600 ? Math.floor(d/60)+'m ago' : d < 86400 ? Math.floor(d/3600)+'h ago' : Math.floor(d/86400)+'d ago'; };
-let toastT; const toast = (m, err) => { const t = $('#toast'); t.textContent = m; t.style.borderColor = err ? 'var(--red)' : 'var(--green)'; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3500); };
-document.querySelectorAll('nav a').forEach(a => a.onclick = () => { document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x === a)); document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === a.dataset.tab)); load(a.dataset.tab); });
-
+let toastT; const toast = (m, err) => { const t = $('#toast'); t.textContent = m; t.style.borderColor = err ? 'var(--red)' : 'var(--green)'; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 4000); };
 const bar = (used, limit) => { if (!limit) return `<span class="muted">${used}</span>`; const p = Math.min(100, used/limit*100); return `<div class="row"><div class="bar"><i class="${p>90?'full':p>60?'warn':''}" style="width:${p}%"></i></div><span class="muted">${used}/${limit}</span></div>`; };
+// tiny markdown: code fences, inline code, bold/italic, headings, lists, quotes, links
+function md(src) {
+  const out = []; const lines = String(src).split('\n'); let i = 0, list = null;
+  const inline = s => esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g, '$1<i>$2</i>').replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a class="link" href="$2" target="_blank" rel="noopener">$1</a>');
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  while (i < lines.length) {
+    const l = lines[i];
+    if (l.startsWith('```')) { closeList(); const buf = []; i++; while (i < lines.length && !lines[i].startsWith('```')) buf.push(lines[i++]); i++; out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`); continue; }
+    const h = l.match(/^(#{1,6})\s+(.*)/); if (h) { closeList(); out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
+    const ul = l.match(/^\s*[-*•]\s+(.*)/), ol = l.match(/^\s*\d+[.)]\s+(.*)/);
+    if (ul || ol) { const kind = ul ? 'ul' : 'ol'; if (list !== kind) { closeList(); out.push(`<${kind}>`); list = kind; } out.push(`<li>${inline((ul||ol)[1])}</li>`); i++; continue; }
+    if (l.startsWith('>')) { closeList(); out.push(`<blockquote>${inline(l.replace(/^>\s?/, ''))}</blockquote>`); i++; continue; }
+    closeList(); if (l.trim() === '') { i++; continue; }
+    const para = [l]; i++; while (i < lines.length && lines[i].trim() !== '' && !/^(#|```|>|\s*[-*•]\s|\s*\d+[.)]\s)/.test(lines[i])) para.push(lines[i++]);
+    out.push(`<p>${inline(para.join('\n')).replace(/\n/g, '<br>')}</p>`);
+  }
+  closeList(); return out.join('');
+}
+document.querySelectorAll('nav a').forEach(a => a.onclick = () => showTab(a.dataset.tab));
+function showTab(tab) { document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x.dataset.tab === tab)); document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === tab)); load(tab); }
 
+// ───────── chat ─────────
+const chat = { session: null, messages: new Map(), parts: new Map(), order: [], busy: false, permissions: [], questions: [], routed: null, follow: true };
+let models = [], agents = [];
+async function loadMeta() {
+  const [m, a] = await Promise.all([api('/models'), api('/agents')]);
+  models = m; agents = a.filter(x => !x.hidden && x.mode !== 'subagent');
+  const ms = $('#model-select'), keep = ms.value; ms.innerHTML = '<option value="">default model</option>' + m.providers.flatMap(p => p.models.map(x => `<option value="${esc(p.id)}/${esc(x.id)}">${esc(p.id === 'lunar' ? x.name : p.name + ' · ' + x.name)}</option>`)).join('');
+  ms.value = localStorage.getItem('lz-model') || keep || '';
+  const as = $('#agent-select'); as.innerHTML = '<option value="">default agent</option>' + agents.map(x => `<option value="${esc(x.name)}">${esc(x.name)}</option>`).join(''); as.value = localStorage.getItem('lz-agent') || '';
+}
+$('#model-select').onchange = e => localStorage.setItem('lz-model', e.target.value);
+$('#agent-select').onchange = e => localStorage.setItem('lz-agent', e.target.value);
+async function loadSessions() {
+  const list = await api('/sessions');
+  $('#sess-list').innerHTML = list.map(s => `<div class="item ${s.id === chat.session ? 'active' : ''}" data-id="${esc(s.id)}"><div class="t"><span class="dot ${s.busy ? 'busy' : 'off'}"></span>${esc(s.title)}</div><div class="m">${esc(s.model || '')} · ${ago(s.updated)}</div></div>`).join('') || '<div class="item muted">no sessions yet</div>';
+  document.querySelectorAll('#sess-list .item[data-id]').forEach(el => el.onclick = () => openSession(el.dataset.id));
+}
+async function openSession(id) {
+  chat.session = id; chat.messages.clear(); chat.parts.clear(); chat.order = []; chat.routed = null; chat.follow = true;
+  const d = await api('/session/' + id + '/messages');
+  for (const m of d.messages) { chat.messages.set(m.info.id, m.info); chat.order.push(m.info.id); for (const p of m.parts) chat.parts.set(p.id, p); }
+  chat.busy = d.busy; chat.permissions = d.permissions; chat.questions = d.questions;
+  $('#chat-title').textContent = d.session.title; $('#chat-stats').textContent = `${fmt(d.tokens)} tokens · $${d.cost.toFixed(4)}`;
+  render(); loadSessions();
+}
+function partsOf(mid) { return [...chat.parts.values()].filter(p => p.messageID === mid).sort((a, b) => a.id < b.id ? -1 : 1); }
+function toolCard(p) {
+  const st = p.state, inp = st.input || {}, icon = st.status === 'completed' ? '✓' : st.status === 'error' ? '✗' : '◐';
+  let title = p.tool; let detail = '';
+  if (p.tool === 'bash') { title = '$ ' + (inp.command || ''); detail = st.output || (st.metadata && st.metadata.output) || ''; }
+  else if (p.tool === 'read') title = 'Read ' + (inp.filePath || '');
+  else if (p.tool === 'write') { title = 'Write ' + (inp.filePath || ''); detail = inp.content || ''; }
+  else if (p.tool === 'edit') { title = 'Edit ' + (inp.filePath || ''); detail = (st.metadata && st.metadata.diff) || `- ${inp.oldString || ''}\n+ ${inp.newString || ''}`; }
+  else if (p.tool === 'glob') title = 'Glob ' + (inp.pattern || ''); else if (p.tool === 'grep') title = 'Grep /' + (inp.pattern || '') + '/';
+  else if (p.tool === 'task') { title = 'Task @' + (inp.subagent_type || '') + ': ' + (inp.description || ''); detail = st.output || ''; }
+  else if (p.tool === 'todowrite') { title = 'Todos'; detail = (inp.todos || []).map(t => `${t.status === 'completed' ? '☑' : t.status === 'in_progress' ? '◐' : '☐'} ${t.content}`).join('\n'); }
+  else if (p.tool === 'question') { title = 'Question'; detail = st.output || ''; }
+  else detail = st.output || JSON.stringify(inp, null, 1);
+  if (st.status === 'error') detail = st.error || detail;
+  return `<details class="tool"><summary><span class="${st.status === 'error' ? 'err' : st.status === 'completed' ? 'ok' : ''}">${icon}</span> <span class="mono">${esc(title.slice(0, 160))}</span></summary>${detail ? `<div class="out">${esc(detail.slice(0, 6000))}</div>` : ''}</details>`;
+}
+function render() {
+  const t = $('#transcript'); const atBottom = t.scrollTop + t.clientHeight >= t.scrollHeight - 40;
+  if (!chat.session) { t.innerHTML = '<p class="muted">Pick a session on the left or type below.</p>'; return; }
+  const html = [];
+  for (const mid of chat.order) {
+    const m = chat.messages.get(mid); if (!m) continue; const parts = partsOf(mid);
+    if (m.role === 'user') {
+      const text = parts.filter(p => p.type === 'text' && !p.synthetic).map(p => p.text).join('\n'); if (!text.trim()) continue;
+      html.push(`<div class="msg user"><div class="body">${esc(text)}</div></div>`);
+    } else {
+      const inner = [];
+      for (const p of parts) {
+        if (p.type === 'text' && p.text.trim()) inner.push(`<div class="body">${md(p.text)}</div>`);
+        else if (p.type === 'reasoning' && p.text.trim()) inner.push(`<details class="think"><summary>∴ thinking</summary>${esc(p.text)}</details>`);
+        else if (p.type === 'tool') inner.push(toolCard(p));
+        else if (p.type === 'retry') inner.push(`<div class="muted">↻ retry ${p.attempt}: ${esc(p.error && p.error.data && p.error.data.message || '')}</div>`);
+      }
+      if (m.error && m.error.name !== 'MessageAbortedError') inner.push(`<div class="err">✗ ${esc(m.error.data && m.error.data.message || m.error.name)}</div>`);
+      else if (m.error) inner.push(`<div class="muted">⏹ interrupted</div>`);
+      html.push(`<div class="msg assistant"><div class="meta">${esc(m.providerID)}/${esc(m.modelID)}${m.cost ? ` · $${m.cost.toFixed(4)}` : ''}</div>${inner.join('')}</div>`);
+    }
+  }
+  if (chat.busy) html.push(`<div class="muted"><span class="dot busy"></span>working…${chat.routed ? ' on ' + esc(chat.routed) : ''}</div>`);
+  t.innerHTML = html.join('');
+  if (atBottom || chat.follow) t.scrollTop = t.scrollHeight;
+  $('#abort').style.display = chat.busy ? '' : 'none';
+  renderAsks();
+}
+function renderAsks() {
+  const box = $('#asks'); const html = [];
+  for (const p of chat.permissions) {
+    const m = p.metadata || {}; let body = '';
+    if (m.diff) body = `<pre>${esc(m.diff.slice(0, 4000))}</pre>`; else if (m.command) body = `<pre>$ ${esc(m.command)}</pre>`; else if (p.patterns && p.patterns.length) body = `<div class="mono">${esc(p.patterns.join(', '))}</div>`;
+    html.push(`<div class="ask"><b>Permission: ${esc(p.permission)}</b> ${m.filePath ? `<span class="mono muted">${esc(m.filePath)}</span>` : ''}${body}
+      <div class="row" style="margin-top:6px"><button class="primary" data-perm="${p.id}" data-reply="once">Allow once</button><button data-perm="${p.id}" data-reply="always">Always${p.always && p.always.length ? ': ' + esc(p.always.join(', ')) : ''}</button><button class="danger" data-perm="${p.id}" data-reply="reject">Reject</button><input type="text" placeholder="reason (optional)" data-reason="${p.id}" style="flex:1"></div></div>`);
+  }
+  for (const q of chat.questions) {
+    html.push(`<div class="ask q" data-q="${q.id}">` + q.questions.map((qq, qi) => `<div style="margin-bottom:8px"><b>${esc(qq.header)}</b> — ${esc(qq.question)}<div style="margin-top:4px">` +
+      qq.options.map((o, oi) => `<label style="display:block"><input type="${qq.multiple ? 'checkbox' : 'radio'}" name="q${qi}" value="${esc(o.label)}"> ${esc(o.label)} <span class="muted">${esc(o.description)}</span></label>`).join('') +
+      `<input type="text" placeholder="or your own answer" data-custom="${qi}" style="width:100%;margin-top:4px"></div></div>`).join('') +
+      `<div class="row"><button class="primary" data-answer="${q.id}">Answer</button><button class="danger" data-reject="${q.id}">Dismiss</button></div></div>`);
+  }
+  box.innerHTML = html.join('');
+  document.querySelectorAll('[data-perm]').forEach(b => b.onclick = async () => { const reason = document.querySelector(`[data-reason="${b.dataset.perm}"]`).value; try { await api('/permission/' + b.dataset.perm, { method: 'POST', body: JSON.stringify({ reply: b.dataset.reply, message: reason }) }); } catch (e) { toast(e.message, true); } });
+  document.querySelectorAll('[data-answer]').forEach(b => b.onclick = async () => {
+    const box = b.closest('[data-q]'); const q = chat.questions.find(x => x.id === b.dataset.answer); const answers = q.questions.map((qq, qi) => { const picked = [...box.querySelectorAll(`input[name="q${qi}"]:checked`)].map(i => i.value); const custom = box.querySelector(`[data-custom="${qi}"]`).value.trim(); if (custom) picked.push(custom); return picked; });
+    if (answers.some(a => !a.length)) return toast('Answer every question (or type your own)', true);
+    try { await api('/question/' + q.id, { method: 'POST', body: JSON.stringify({ answers }) }); } catch (e) { toast(e.message, true); }
+  });
+  document.querySelectorAll('[data-reject]').forEach(b => b.onclick = () => api('/question/' + b.dataset.reject, { method: 'POST', body: JSON.stringify({ reject: true }) }).catch(e => toast(e.message, true)));
+}
+async function send() {
+  const text = $('#prompt').value.trim(); if (!text) return;
+  try {
+    if (!chat.session) { const s = await api('/session', { method: 'POST', body: JSON.stringify({ agent: $('#agent-select').value || null }) }); await openSession(s.id); }
+    await api('/session/' + chat.session + '/prompt', { method: 'POST', body: JSON.stringify({ text, model: $('#model-select').value || null, agent: $('#agent-select').value || null }) });
+    $('#prompt').value = ''; chat.follow = true; chat.busy = true; render();
+  } catch (e) { toast(e.message, true); }
+}
+$('#send').onclick = send;
+$('#prompt').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+$('#abort').onclick = () => chat.session && api('/session/' + chat.session + '/abort', { method: 'POST' }).catch(e => toast(e.message, true));
+$('#new-session').onclick = () => { chat.session = null; chat.messages.clear(); chat.parts.clear(); chat.order = []; $('#chat-title').textContent = 'New session — send a message to start'; $('#chat-stats').textContent = ''; render(); loadSessions(); $('#prompt').focus(); };
+$('#del-session').onclick = async () => { if (!chat.session || !confirm('Delete this session?')) return; await api('/session/' + chat.session, { method: 'DELETE' }); $('#new-session').onclick(); };
+
+// live events
+function connectEvents() {
+  const es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+  es.onopen = () => $('#live').className = 'dot on';
+  es.onerror = () => $('#live').className = 'dot off';
+  es.onmessage = e => handle(JSON.parse(e.data));
+  for (const t of ['session.created','session.updated','session.deleted','session.status','session.error','message.updated','message.part.updated','message.part.delta','permission.asked','permission.replied','question.asked','question.replied','question.rejected','model.routed']) es.addEventListener(t, e => handle({ type: t, properties: JSON.parse(e.data).properties }));
+}
+let sessListT;
+function handle(ev) {
+  const p = ev.properties || {}; const mine = p.sessionID === chat.session;
+  switch (ev.type) {
+    case 'session.created': case 'session.updated': case 'session.deleted': clearTimeout(sessListT); sessListT = setTimeout(loadSessions, 300); if (mine && p.info) $('#chat-title').textContent = p.info.title; break;
+    case 'session.status': if (mine) { chat.busy = p.status.type !== 'idle'; render(); } clearTimeout(sessListT); sessListT = setTimeout(loadSessions, 300); break;
+    case 'session.error': if (mine) toast((p.error.data && p.error.data.message) || p.error.name, true); break;
+    case 'message.updated': if (mine) { if (!chat.messages.has(p.info.id)) chat.order.push(p.info.id); chat.messages.set(p.info.id, p.info); render(); } break;
+    case 'message.part.updated': if (mine) { chat.parts.set(p.part.id, p.part); render(); } break;
+    case 'message.part.delta': if (mine) { const part = chat.parts.get(p.partID); if (part && p.field === 'text') { part.text += p.delta; render(); } } break;
+    case 'permission.asked': if (p.sessionID === chat.session) { if (!chat.permissions.some(x => x.id === p.id)) chat.permissions.push(p); renderAsks(); } break;
+    case 'permission.replied': chat.permissions = chat.permissions.filter(x => x.id !== p.requestID); renderAsks(); break;
+    case 'question.asked': if (p.sessionID === chat.session) { if (!chat.questions.some(x => x.id === p.id)) chat.questions.push(p); renderAsks(); } break;
+    case 'question.replied': case 'question.rejected': chat.questions = chat.questions.filter(x => x.id !== p.requestID); renderAsks(); break;
+    case 'model.routed': if (mine) { chat.routed = p.providerID + '/' + p.modelID; if (!String(p.reason).startsWith('routed:')) toast('Switched to ' + chat.routed + ' (' + p.reason + ')'); render(); } break;
+  }
+}
+
+// ───────── overview / keys / pool ─────────
 async function overview() {
   const s = await api('/status');
   $('#version').textContent = 'v' + s.version; $('#dir').textContent = s.directory;
-  const pool = s.pool;
-  $('#ov-cards').innerHTML = [
-    ['Connected providers', s.providers.filter(p => p.connected).length, `of ${s.providers.length} known`],
-    ['Pool models ready', pool.ready, `${pool.cooling} cooling · ${pool.total} total`],
-    ['Requests today', pool.requests_today, 'across pool models'],
-    ['Tokens today', fmt(pool.tokens_today), 'pool usage'],
-    ['Sessions', s.sessions, `${s.sessions_today} today`],
-    ['Default model', s.default_model || '—', s.default_model && s.default_model.startsWith('lunar/') ? 'routed per request' : ''],
-  ].map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
+  $('#ov-cards').innerHTML = [['Connected providers', s.providers.filter(p => p.connected).length, `of ${s.providers.length} known`], ['Pool models ready', s.pool.ready, `${s.pool.cooling} cooling · ${s.pool.total} total`], ['Requests today', s.pool.requests_today, 'across pool models'], ['Tokens today', fmt(s.pool.tokens_today), 'pool usage'], ['Sessions', s.sessions, `${s.sessions_today} today`], ['Default model', s.default_model || '—', s.default_agent ? 'agent ' + s.default_agent : '']]
+    .map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
   $('#ov-providers').innerHTML = s.providers.filter(p => p.connected).map(p => `<tr><td><span class="dot on"></span>${esc(p.name)}<span class="mono muted"> ${esc(p.id)}</span>${p.pool?'<span class="tag pool">free pool</span>':''}</td><td class="ok">connected</td><td>${p.models}</td><td class="muted">${esc(p.source)}</td></tr>`).join('') || '<tr><td colspan=4 class="muted">No provider connected yet — add a key on the API keys tab.</td></tr>';
 }
-
 async function keys() {
-  const s = await api('/providers');
-  $('#auth-path').textContent = s.auth_path; 
+  const s = await api('/providers'); $('#auth-path').textContent = s.auth_path;
   const all = $('#key-all').checked, f = $('#key-filter').value.toLowerCase();
   const rows = s.providers.filter(p => (all || p.pool || p.connected) && (!f || (p.id + ' ' + p.name).toLowerCase().includes(f)));
   $('#keys-body').innerHTML = rows.map(p => `<tr>
@@ -134,42 +377,75 @@ async function keys() {
     <td class="mono muted">${esc((p.env||[]).join(' | '))}</td>
     <td>${p.stored ? `<span class="mono">${esc(p.masked)}</span>` : `<input type="password" placeholder="paste API key" data-id="${esc(p.id)}" style="width:220px">`}</td>
     <td>${p.stored ? `<button class="danger" data-del="${esc(p.id)}">remove</button>` : `<button class="primary" data-save="${esc(p.id)}">save</button>`}</td></tr>`).join('');
-  document.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => {
-    const id = b.dataset.save, inp = document.querySelector(`input[data-id="${id}"]`); if (!inp.value.trim()) return;
-    try { await api('/auth/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ key: inp.value.trim() }) }); toast('Saved key for ' + id); keys(); } catch (e) { toast(e.message, true); }
-  });
-  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-    if (!confirm('Remove the stored key for ' + b.dataset.del + '?')) return;
-    try { await api('/auth/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); toast('Removed'); keys(); } catch (e) { toast(e.message, true); }
-  });
+  document.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => { const id = b.dataset.save, inp = document.querySelector(`input[data-id="${id}"]`); if (!inp.value.trim()) return; try { await api('/auth/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ key: inp.value.trim() }) }); toast('Saved key for ' + id); keys(); loadMeta(); } catch (e) { toast(e.message, true); } });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (!confirm('Remove the stored key for ' + b.dataset.del + '?')) return; try { await api('/auth/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); toast('Removed'); keys(); loadMeta(); } catch (e) { toast(e.message, true); } });
   document.querySelectorAll('input[data-id]').forEach(i => i.onkeydown = e => { if (e.key === 'Enter') i.closest('tr').querySelector('[data-save]').click(); });
 }
 $('#key-all').onchange = keys; $('#key-filter').oninput = keys;
-
 async function pool() {
   const s = await api('/pool?all=' + ($('#pool-all').checked ? 1 : 0));
-  const ready = s.models.filter(m => m.connected && !m.cooldown_secs).length, cooling = s.models.filter(m => m.cooldown_secs).length;
-  $('#pool-cards').innerHTML = [['Ready', ready, 'under limits'], ['Cooling down', cooling, 'rate limited / failed'], ['Requests today', s.requests_today, ''], ['Tokens today', fmt(s.tokens_today), ''], ['Strategy', s.strategy, 'lunar/auto default'], ['Catalog', s.catalog_version, `${s.total} models`]]
-    .map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
+  const ready = s.models.filter(m => m.connected && !m.excluded && !m.cooldown_secs).length, cooling = s.models.filter(m => m.cooldown_secs).length;
+  $('#pool-cards').innerHTML = [['Ready', ready, 'under limits'], ['Cooling down', cooling, 'rate limited / failed'], ['Requests today', s.requests_today, ''], ['Tokens today', fmt(s.tokens_today), ''], ['Strategy', s.strategy, 'lunar/auto default'], ['Catalog', s.catalog_version, `${s.total} models`]].map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
   $('#pool-body').innerHTML = s.models.map(m => `<tr>
     <td><span class="dot ${!m.connected||m.excluded?'off':m.cooldown_secs?'cool':'on'}"></span><span class="mono">${esc(m.provider)}/${esc(m.id)}</span>${m.tools?'':'<span class="tag">no tools</span>'}<div class="muted" style="font-size:12px">${esc(m.name)} · ${fmt(m.context)} ctx</div></td>
-    <td>${bar(m.quality, 100)}</td><td>${bar(m.speed, 100)}</td>
-    <td>${bar(m.rpm_used, m.rpm)}</td><td>${bar(m.rpd_used, m.rpd)}</td><td>${bar(m.tpm_used, m.tpm)}</td><td>${bar(m.tpd_used, m.tpd)}</td>
+    <td>${bar(m.quality, 100)}</td><td>${bar(m.speed, 100)}</td><td>${bar(m.rpm_used, m.rpm)}</td><td>${bar(m.rpd_used, m.rpd)}</td><td>${bar(m.tpm_used, m.tpm)}</td><td>${bar(m.tpd_used, m.tpd)}</td>
     <td class="muted">${m.ttft_ms ? m.ttft_ms + 'ms · ' + m.tps + ' tok/s' : '—'}</td>
     <td>${m.excluded ? '<span class="muted">excluded</span>' : m.cooldown_secs ? `<span class="err">⏸ ${Math.ceil(m.cooldown_secs/60)}m</span><div class="muted" style="font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.last_error)}">${esc(m.last_error)}</div>` : m.connected ? '<span class="ok">ready</span>' : '<span class="muted">no key</span>'}</td></tr>`).join('');
 }
 $('#pool-all').onchange = pool;
 $('#pool-reset').onclick = async () => { await api('/pool/reset', { method: 'POST' }); toast('Cooldowns cleared'); pool(); };
 
-async function sessions() {
-  const s = await api('/sessions');
-  $('#sess-body').innerHTML = s.map(x => `<tr><td>${esc(x.title)}<div class="mono muted" style="font-size:11px">${esc(x.id)}</div></td><td class="mono muted">${esc(x.model||'')}</td><td>${fmt(x.tokens)}</td><td>$${x.cost.toFixed(4)}</td><td class="muted">${ago(x.updated)}</td><td><span class="mono muted">lz -s ${esc(x.id)}</span></td></tr>`).join('') || '<tr><td colspan=6 class="muted">No sessions in this project yet.</td></tr>';
+// ───────── settings ─────────
+const THEMES = ['lunar','system','ayu','catppuccin','dracula','everforest','github','gruvbox','kanagawa','mono','monokai','night-owl','nord','one-dark','rose-pine','solarized','tokyonight','zenburn'];
+let cfgState = null;
+const parseJsonc = t => { try { return JSON.parse(t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/mg, '').replace(/,(\s*[}\]])/g, '$1') || '{}'); } catch { return null; } };
+async function settings() {
+  cfgState = await api('/config'); const m = cfgState.merged;
+  const opts = models.providers ? models.providers.flatMap(p => p.models.map(x => `<option value="${esc(p.id)}/${esc(x.id)}">${esc(p.id === 'lunar' ? x.name : p.name + ' · ' + x.name)}</option>`)).join('') : '';
+  $('#s-model').innerHTML = '<option value="">(auto: first connected)</option>' + opts; $('#s-small').innerHTML = '<option value="">(same provider, cheaper)</option>' + opts;
+  $('#s-agent').innerHTML = '<option value="">build</option>' + cfgState.agents.filter(a => a.mode !== 'subagent').map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
+  $('#s-theme').innerHTML = THEMES.map(t => `<option value="${t}">${t}</option>`).join('');
+  $('#s-agents').innerHTML = cfgState.agents.map(a => `<div><b>${esc(a.name)}</b> <span class="tag">${esc(a.mode)}</span>${a.builtin ? '' : '<span class="tag">custom</span>'} ${a.model ? '<span class="mono">' + esc(a.model) + '</span>' : ''}<div>${esc(a.description || '')}</div></div>`).join('');
+  fillForm();
+  $('#raw-files').innerHTML = cfgState.files.map(f => `<details class="raw"><summary>${esc(f.scope)} — <span class="mono">${esc(f.path)}</span>${f.exists ? '' : ' (not created yet)'} · ${esc(f.description)}</summary><textarea rows="14" data-raw="${esc(f.scope)}">${esc(f.text)}</textarea><div class="row" style="margin:6px 0 12px"><button class="primary" data-rawsave="${esc(f.scope)}">Save file</button></div></details>`).join('');
+  document.querySelectorAll('[data-rawsave]').forEach(b => b.onclick = async () => { const ta = document.querySelector(`textarea[data-raw="${b.dataset.rawsave}"]`); try { await api('/config/' + b.dataset.rawsave, { method: 'PUT', body: JSON.stringify({ text: ta.value }) }); toast('Saved ' + b.dataset.rawsave + ' config'); settings(); loadMeta(); } catch (e) { toast(e.message, true); } });
 }
-async function config() { const s = await api('/config'); $('#cfg-path').textContent = s.global_dir; $('#cfg').textContent = JSON.stringify(s.config, null, 2); }
-const loaders = { overview, keys, pool, sessions, config };
+function scopeFile() { return cfgState.files.find(f => f.scope === $('#cfg-scope').value); }
+function fillForm() {
+  const m = cfgState.merged, pool = m.pool || {}, perm = (typeof m.permission === 'object' && m.permission) || {};
+  const permVal = k => typeof perm[k] === 'string' ? perm[k] : '';
+  $('#s-model').value = m.model || ''; $('#s-small').value = m.small_model || ''; $('#s-agent').value = m.default_agent || '';
+  $('#s-strategy').value = pool.strategy || 'auto'; $('#s-sticky').value = pool.sticky_minutes ?? 30; $('#s-fallback').checked = pool.fallback !== false; $('#s-exclude').value = (pool.exclude || []).join(', ');
+  $('#s-perm-edit').value = permVal('edit'); $('#s-perm-bash').value = permVal('bash'); $('#s-perm-web').value = permVal('webfetch');
+  $('#s-lsp').checked = m.lsp === true || (m.lsp && typeof m.lsp === 'object'); $('#s-snapshot').checked = m.snapshot !== false; $('#s-compact').checked = !(m.compaction && m.compaction.auto === false);
+  $('#s-instructions').value = (m.instructions || []).join(', ');
+  const tui = parseJsonc((cfgState.files.find(f => f.scope === 'tui') || {}).text || '{}') || {};
+  $('#s-theme').value = tui.theme || cfgState.theme || 'lunar'; $('#s-web').checked = !(tui.web && tui.web.enabled === false); $('#s-web-port').value = (tui.web && tui.web.port) || 7411;
+  $('#cfg-path').textContent = scopeFile().path;
+}
+$('#cfg-scope').onchange = () => { $('#cfg-path').textContent = scopeFile().path; };
+$('#cfg-save').onclick = async () => {
+  const f = scopeFile(); const doc = parseJsonc(f.text || '{}'); if (!doc) return toast('The ' + f.scope + ' file is not valid JSON — fix it in Raw files first', true);
+  const set = (k, v) => { if (v === '' || v === null || v === undefined) delete doc[k]; else doc[k] = v; };
+  set('model', $('#s-model').value); set('small_model', $('#s-small').value); set('default_agent', $('#s-agent').value);
+  const pool = { ...(doc.pool || {}) }; pool.strategy = $('#s-strategy').value; pool.sticky_minutes = Number($('#s-sticky').value); pool.fallback = $('#s-fallback').checked; const ex = $('#s-exclude').value.split(',').map(s => s.trim()).filter(Boolean); if (ex.length) pool.exclude = ex; else delete pool.exclude; doc.pool = pool;
+  const perm = (typeof doc.permission === 'object' && doc.permission) || {}; for (const [k, id] of [['edit','#s-perm-edit'],['bash','#s-perm-bash'],['webfetch','#s-perm-web']]) { const v = $(id).value; if (v) perm[k] = v; else if (typeof perm[k] === 'string') delete perm[k]; } if (Object.keys(perm).length) doc.permission = perm; else delete doc.permission;
+  doc.lsp = $('#s-lsp').checked ? true : undefined; if (doc.lsp === undefined) delete doc.lsp;
+  if ($('#s-snapshot').checked) delete doc.snapshot; else doc.snapshot = false;
+  const comp = { ...(doc.compaction || {}) }; if ($('#s-compact').checked) delete comp.auto; else comp.auto = false; if (Object.keys(comp).length) doc.compaction = comp; else delete doc.compaction;
+  const ins = $('#s-instructions').value.split(',').map(s => s.trim()).filter(Boolean); if (ins.length) doc.instructions = ins; else delete doc.instructions;
+  const tuiFile = cfgState.files.find(x => x.scope === 'tui'); const tui = parseJsonc(tuiFile.text || '{}') || {}; tui.theme = $('#s-theme').value; tui.web = { ...(tui.web || {}), enabled: $('#s-web').checked, port: Number($('#s-web-port').value) || 7411 };
+  try {
+    await api('/config/' + f.scope, { method: 'PUT', body: JSON.stringify({ text: JSON.stringify(doc, null, 2) + '\n' }) });
+    await api('/config/tui', { method: 'PUT', body: JSON.stringify({ text: JSON.stringify(tui, null, 2) + '\n' }) });
+    toast('Settings saved and applied'); settings(); loadMeta();
+  } catch (e) { toast(e.message, true); }
+};
+
+const loaders = { chat: async () => { await loadMeta(); await loadSessions(); }, overview, keys, pool, settings };
 async function load(tab) { try { await loaders[tab](); } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); } }
-load('overview');
-setInterval(() => { const t = document.querySelector('nav a.active').dataset.tab; if (t === 'overview' || t === 'pool') load(t); }, 5000);
+(async () => { try { const s = await api('/status'); $('#version').textContent = 'v' + s.version; $('#dir').textContent = s.directory; } catch {} connectEvents(); load('chat'); })();
+setInterval(() => { const t = document.querySelector('nav a.active').dataset.tab; if (t === 'overview' || t === 'pool') load(t); }, 6000);
 </script>
 </body>
 </html>
