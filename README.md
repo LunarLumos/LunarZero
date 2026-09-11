@@ -38,8 +38,12 @@ Requires a stable Rust toolchain (see `rust-toolchain.toml`).
 
 ## Quick start
 
+LunarZero ships with no keys and no cloud — you connect it to a model once:
+
 ```sh
-export OPENAI_API_KEY=sk-...          # or: lz auth login openai
+lz setup                              # guided: pick a free provider, get a key, verify it
+# or any of: export GROQ_API_KEY=… · lz auth login groq · /connect in the TUI · the web portal
+# or run Ollama / LM Studio locally — detected automatically
 lz                                    # open the TUI in the current project
 lz run "explain the build system"     # one-shot, prints the answer
 lz run --format json "list the tests" # NDJSON event stream

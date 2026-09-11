@@ -21,6 +21,7 @@ lz-core.workspace = true
 lz-tui.workspace = true
 lz-web.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tokio-stream.workspace = true
 futures.workspace = true
 clap.workspace = true

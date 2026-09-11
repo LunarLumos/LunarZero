@@ -2042,18 +2042,43 @@ impl App {
             .providers
             .providers
             .iter()
+            .filter(|p| !p.local || p.connected)
             .map(|p| {
+                let desc = if p.connected {
+                    format!("connected via {}", p.source)
+                } else if let Some(url) = &p.signup {
+                    format!("get a key: {url}")
+                } else if let Some(env) = p.env.first() {
+                    format!("env {env}")
+                } else {
+                    String::new()
+                };
+                let cat = if p.connected {
+                    "Connected"
+                } else if p.free {
+                    "Free tier — get a key in a minute"
+                } else {
+                    "Other providers"
+                };
                 SelectItem::new(p.id.clone(), p.name.clone())
-                    .desc(if p.connected {
-                        format!("connected via {}", p.source)
+                    .desc(desc)
+                    .cat(cat)
+                    .hint(if p.connected {
+                        "●"
+                    } else if p.free {
+                        "free"
                     } else {
-                        String::new()
+                        ""
                     })
-                    .cat(if p.connected { "Connected" } else { "Available" })
-                    .hint(if p.connected { "●" } else { "" })
             })
             .collect();
-        items.sort_by_key(|i| i.category != "Connected");
+        items.sort_by_key(|i| {
+            (
+                i.category != "Connected",
+                i.category != "Free tier — get a key in a minute",
+                i.label.clone(),
+            )
+        });
         self.dialogs.push(Dialog::Select(
             SelectDialog::new(SelectKind::Providers, "Connect provider", items)
                 .with_footer("enter to add an API key"),
@@ -2535,9 +2560,32 @@ impl App {
                 }
             }
             SelectKind::Providers => {
+                let signup = self
+                    .store
+                    .providers
+                    .providers
+                    .iter()
+                    .find(|p| p.id == item.value)
+                    .and_then(|p| p.signup.clone());
+                if let Some(url) = &signup {
+                    // open the signup page so the key is one paste away
+                    let opener = if cfg!(target_os = "macos") {
+                        "open"
+                    } else {
+                        "xdg-open"
+                    };
+                    let _ = std::process::Command::new(opener)
+                        .arg(url)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+                }
                 self.dialogs.push(Dialog::Input(InputDialog {
                     title: format!("Connect {}", item.label),
-                    prompt: "API key".into(),
+                    prompt: match signup {
+                        Some(url) => format!("Paste your API key (signup page opened: {url})"),
+                        None => "Paste your API key".into(),
+                    },
                     value: String::new(),
                     masked: true,
                     action: InputAction::ProviderKey(item.value),
@@ -3087,13 +3135,31 @@ impl App {
             "╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝",
             "                   Z E R O                 ",
         ];
-        let tips = [
-            "Type a message and press enter to start a session",
-            "Use @ to mention files, / for commands, ! to run shell",
-            "ctrl+x then n/l/m/a: new · sessions · models · agents",
-            "ctrl+p opens the command palette",
+        let connected = self.booted && self.store.providers.providers.iter().any(|p| p.connected);
+        let portal = self
+            .web_url
+            .as_deref()
+            .map(|u| u.split("/?").next().unwrap_or(u).to_string())
+            .unwrap_or_else(|| "lz web".into());
+        let onboarding = [
+            "No model connected yet — pick any one of these:".to_string(),
+            "  /connect      paste a free API key (Groq, Cerebras, Google AI Studio, OpenRouter… a minute each, no card)".to_string(),
+            format!("  {portal}   the portal's API keys tab has the signup links"),
+            "  local         start Ollama or LM Studio — it is picked up automatically".to_string(),
+            "  terminal      lz setup   (guided)".to_string(),
         ];
-        let content_h = logo.len() as u16 + 2 + prompt_h + if self.tips { tips.len() as u16 + 1 } else { 0 };
+        let tips: Vec<String> = if !connected && self.booted {
+            onboarding.to_vec()
+        } else {
+            vec![
+                "Type a message and press enter to start a session".into(),
+                "Use @ to mention files, / for commands, ! to run shell".into(),
+                "ctrl+x then n/l/m/a: new · sessions · models · agents".into(),
+                "ctrl+p opens the command palette".into(),
+            ]
+        };
+        let show_tips = self.tips || !connected;
+        let content_h = logo.len() as u16 + 2 + prompt_h + if show_tips { tips.len() as u16 + 1 } else { 0 };
         let top = area.y + area.height.saturating_sub(content_h) / 2;
         let w = area.width.min(100);
         let x = area.x + (area.width - w) / 2;
@@ -3127,22 +3193,28 @@ impl App {
         let focused = self.dialogs.is_empty();
         self.prompt.render(f, prompt_area, &self.theme, focused, &hint);
         y += prompt_h + 1;
-        if self.tips {
-            for t in tips {
+        if show_tips {
+            let left_align = !connected;
+            for (i, t) in tips.iter().enumerate() {
                 if y >= area.y + area.height {
                     break;
                 }
+                let style = if left_align && i == 0 {
+                    self.theme.bold("warning")
+                } else {
+                    self.theme.muted()
+                };
                 let rect = Rect {
-                    x: area.x,
+                    x: if left_align { x } else { area.x },
                     y,
-                    width: area.width,
+                    width: if left_align { w } else { area.width },
                     height: 1,
                 };
-                f.render_widget(
-                    Paragraph::new(Line::from(Span::styled(t.to_string(), self.theme.muted())))
-                        .alignment(Alignment::Center),
-                    rect,
-                );
+                let mut para = Paragraph::new(Line::from(Span::styled(t.to_string(), style)));
+                if !left_align {
+                    para = para.alignment(Alignment::Center);
+                }
+                f.render_widget(para, rect);
                 y += 1;
             }
         }

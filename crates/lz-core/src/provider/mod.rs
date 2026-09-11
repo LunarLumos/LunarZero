@@ -68,12 +68,40 @@ pub struct Provider {
     /// `env` | `config` | `auth` | `catalog`
     pub source: &'static str,
     pub models: BTreeMap<String, Model>,
+    /// For local servers (Ollama, LM Studio, …): something is listening on the port.
+    pub reachable: bool,
 }
 
 impl Provider {
     pub fn connected(&self) -> bool {
-        self.api_key.is_some() || self.source == "config" || is_local(&self.base_url)
+        if is_local(&self.base_url) {
+            return self.reachable || (self.source == "config" && self.api_key.is_some());
+        }
+        self.api_key.is_some() || self.source == "config"
     }
+}
+
+/// Quick TCP probe (150 ms) so an installed-but-not-running local server is
+/// not offered as a working provider.
+pub fn probe_local(url: &str) -> bool {
+    let rest = url.split("://").nth(1).unwrap_or(url);
+    let hostport = rest.split('/').next().unwrap_or(rest);
+    let (host, port) = match hostport.rsplit_once(':') {
+        Some((h, p)) => (h, p.parse::<u16>().unwrap_or(80)),
+        None => (hostport, 80),
+    };
+    let host = if host == "0.0.0.0" || host == "localhost" {
+        "127.0.0.1"
+    } else {
+        host
+    };
+    let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, port)) else {
+        return false;
+    };
+    addrs
+        .into_iter()
+        .take(2)
+        .any(|a| std::net::TcpStream::connect_timeout(&a, std::time::Duration::from_millis(150)).is_ok())
 }
 
 fn is_local(url: &str) -> bool {
@@ -371,6 +399,7 @@ impl Registry {
                     headers: Vec::new(),
                     source: "catalog",
                     models,
+                    reachable: false,
                 },
             );
         }
@@ -389,6 +418,7 @@ impl Registry {
                 headers: Vec::new(),
                 source: "config",
                 models: BTreeMap::new(),
+                reachable: false,
             });
             apply_provider_config(&mut p, pc, id);
             p.source = "config";
@@ -420,10 +450,17 @@ impl Registry {
             }
         }
 
-        // 5. free-tier pool overlay + virtual `auto` provider
+        // 5. local servers: only those actually listening count as connected
+        for p in providers.values_mut() {
+            if is_local(&p.base_url) {
+                p.reachable = probe_local(&p.base_url);
+            }
+        }
+
+        // 6. free-tier pool overlay + virtual `lunar` provider
         pool::apply(&mut providers, config, all_models);
 
-        // 6. filters
+        // 7. filters
         providers.retain(|id, _| !disabled.contains(id));
         if let Some(enabled) = enabled {
             providers.retain(|id, _| enabled.contains(id));
@@ -556,23 +593,38 @@ impl Registry {
 
     pub fn to_response(&self, config: &Config) -> ProvidersResponse {
         let mut default = BTreeMap::new();
+        let pool_cat = pool::catalog();
+        let known = catalog::embedded();
         let providers = self
             .providers
             .values()
-            .filter(|p| p.connected())
+            // connected providers, plus every provider a user could connect
+            // (free-tier pool members and catalog providers we can talk to)
+            .filter(|p| {
+                p.connected() || pool_cat.providers.contains_key(&p.id) || protocol_for(&p.npm).is_some()
+            })
             .map(|p| {
-                if let Some(m) = p.models.values().find(|m| m.protocol.is_some()) {
+                let connected = p.connected();
+                if connected && let Some(m) = p.models.values().find(|m| m.protocol.is_some()) {
                     default.insert(p.id.clone(), m.id.clone());
                 }
+                let pool_p = pool_cat.providers.get(&p.id);
                 ProviderInfo {
                     id: p.id.clone(),
                     name: p.name.clone(),
                     source: p.source.to_string(),
-                    connected: p.connected(),
+                    connected,
+                    free: pool_p.is_some(),
+                    signup: pool_p.map(|f| f.signup.clone()),
+                    env: pool_p
+                        .map(|f| f.env.clone())
+                        .or_else(|| known.get(&p.id).map(|c| c.env.clone()))
+                        .unwrap_or_default(),
+                    local: is_local(&p.base_url),
                     models: p
                         .models
                         .values()
-                        .filter(|m| m.protocol.is_some() && is_chat_model(&m.id))
+                        .filter(|m| connected && m.protocol.is_some() && is_chat_model(&m.id))
                         .map(|m| ModelInfo {
                             id: m.id.clone(),
                             provider_id: m.provider_id.clone(),

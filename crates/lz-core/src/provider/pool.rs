@@ -182,6 +182,7 @@ pub fn apply(providers: &mut BTreeMap<String, Provider>, config: &Config, all_mo
             headers: Vec::new(),
             source: "catalog",
             models: BTreeMap::new(),
+            reachable: false,
         });
         if entry.api_key.is_none() {
             entry.api_key = env_key(id);
@@ -257,6 +258,7 @@ pub fn apply(providers: &mut BTreeMap<String, Provider>, config: &Config, all_mo
             headers: Vec::new(),
             source: "pool",
             models: BTreeMap::new(),
+            reachable: true,
         };
         for (id, name, _desc) in MODELS {
             let mut m = blank_model(&lunar, id, name, 128_000.0);

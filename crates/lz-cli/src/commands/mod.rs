@@ -6,6 +6,7 @@ mod models;
 mod pool;
 mod run;
 mod session;
+mod setup;
 mod skill;
 mod tui;
 mod upgrade;
@@ -19,6 +20,7 @@ pub async fn dispatch(cli: Cli) -> anyhow::Result<i32> {
         Some(Command::Auth { cmd }) => auth::run(cmd).await,
         Some(Command::Agent { cmd }) => agent::run(cmd).await,
         Some(Command::Skill { cmd }) => skill::run(cmd).await,
+        Some(Command::Setup) => setup::exec().await,
         Some(Command::Recommend) => {
             let r = lz_core::recommended::catalog();
             println!("Built-in skills (always available, loaded on demand):");

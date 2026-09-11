@@ -613,6 +613,7 @@ mod tests {
                     headers: Vec::new(),
                     source: "env",
                     models: Default::default(),
+                    reachable: false,
                 });
             p.models.insert(m.id.clone(), m);
         }

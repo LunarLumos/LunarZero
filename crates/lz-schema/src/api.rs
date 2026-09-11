@@ -111,7 +111,17 @@ pub struct ProviderInfo {
     /// `env` | `config` | `auth` | `catalog`
     pub source: String,
     pub connected: bool,
+    /// Only populated for connected providers.
     pub models: Vec<ModelInfo>,
+    /// Free-tier provider (member of the pool).
+    #[serde(default)]
+    pub free: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signup: Option<String>,
+    #[serde(default)]
+    pub env: Vec<String>,
+    #[serde(default)]
+    pub local: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

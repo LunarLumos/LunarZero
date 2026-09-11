@@ -161,7 +161,7 @@ async fn resolve_model(
     }
     registry.default_model(&engine.config()).cloned().ok_or_else(|| {
         PromptError::NoModel(
-            "no provider is configured. Run `lz auth login` or set an API key env var".into(),
+            "no model is connected yet. Run `lz setup` (guided), `lz auth login <provider>`, use /connect in the TUI, or start Ollama — see `lz pool setup` for free keys".into(),
         )
     })
 }

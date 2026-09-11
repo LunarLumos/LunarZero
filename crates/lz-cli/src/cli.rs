@@ -77,6 +77,8 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Guided first-run: connect a provider and verify it
+    Setup,
     /// Curated MCP servers and skills you can install by alias
     Recommend,
     /// Skills: list, install from GitHub, remove, update
