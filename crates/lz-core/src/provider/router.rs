@@ -278,8 +278,8 @@ impl Router {
     /// cooldown applied, for logging.
     pub fn record_failure(&self, model: &Model, err: &LlmError) -> Duration {
         let now = now_ms();
-        let msg = err.to_string();
-        let lower = msg.to_lowercase();
+        let msg = compact_error(err);
+        let lower = err.to_string().to_lowercase();
         let daily = lower.contains("per day")
             || lower.contains("daily")
             || lower.contains("quota exceeded")
@@ -543,7 +543,9 @@ impl Router {
         if candidates.is_empty() {
             return None;
         }
-        // sticky: same model for a session while it stays usable
+        // sticky: same model for a session while it stays usable — unless a
+        // clearly better model (≥ 12 quality points) is free now, e.g. after a
+        // stronger provider's key was added or its cooldown ended
         if sticky_minutes > 0 {
             let sticky = self.sticky.lock().unwrap();
             if let Some((key, until)) = sticky.get(session_id)
@@ -551,10 +553,19 @@ impl Router {
                 && let Some(m) = candidates.iter().find(|m| &Self::key(m) == key)
                 && self.available(&mut l, m, need.tokens, now).is_ok()
             {
-                return Some(Pick {
-                    model: (*m).clone(),
-                    reason: "sticky".into(),
-                });
+                let mine = m.pool.as_ref().map(|p| p.quality).unwrap_or(0);
+                let best_free = candidates
+                    .iter()
+                    .filter(|c| self.available(&mut l, c, need.tokens, now).is_ok())
+                    .map(|c| c.pool.as_ref().map(|p| p.quality).unwrap_or(0))
+                    .max()
+                    .unwrap_or(mine);
+                if best_free < mine + 12 {
+                    return Some(Pick {
+                        model: (*m).clone(),
+                        reason: "sticky".into(),
+                    });
+                }
             }
         }
         let effective = match strategy {
@@ -664,6 +675,36 @@ impl Router {
         }
         out
     }
+}
+
+/// Short, human error text for ledgers and status lines (JSON bodies → their message).
+pub fn compact_error(err: &LlmError) -> String {
+    let raw = err.to_string();
+    let body = raw.split_once(": ").map(|(_, b)| b).unwrap_or(&raw);
+    let text = lz_schema::session::json_error_message(body).unwrap_or_else(|| body.to_string());
+    let mut one: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    for marker in [
+        " For more information",
+        " To monitor",
+        " Learn more",
+        " See https://",
+    ] {
+        if let Some(i) = one.find(marker) {
+            one.truncate(i);
+        }
+    }
+    let status = match err {
+        LlmError::Provider { status, .. } => format!("HTTP {status}: "),
+        LlmError::RateLimited { .. } => "rate limited: ".into(),
+        LlmError::Timeout { .. } => "timeout: ".into(),
+        LlmError::Network { .. } => "network: ".into(),
+        _ => String::new(),
+    };
+    let mut s = format!("{status}{one}");
+    if s.chars().count() > 120 {
+        s = s.chars().take(119).collect::<String>() + "…";
+    }
+    s
 }
 
 /// The `auto` strategy: agentic/coding work with tools or big prompts wants
@@ -796,9 +837,10 @@ mod tests {
 
     #[test]
     fn sticky_keeps_session_on_model() {
+        // two models of similar quality: the session sticks to its first pick
         let reg = registry(vec![
-            model("a", "big", 90, 20, None),
-            model("b", "quick", 30, 95, None),
+            model("a", "big", 72, 20, None),
+            model("b", "quick", 62, 95, None),
         ]);
         let r = Router::new(None);
         let need = Need::default();
@@ -809,10 +851,23 @@ mod tests {
                 .id,
             "quick"
         );
-        // strategy changes but sticky wins while the model is usable
+        // strategy changes but sticky wins while the model is usable and no
+        // clearly better model is free
         assert_eq!(
             r.pick(&reg, Strategy::Smart, &need, "s", &[], 30).unwrap().reason,
             "sticky"
+        );
+        // a much better model appearing breaks stickiness
+        let reg2 = registry(vec![
+            model("a", "big", 95, 20, None),
+            model("b", "quick", 62, 95, None),
+        ]);
+        assert_eq!(
+            r.pick(&reg2, Strategy::Smart, &need, "s", &[], 30)
+                .unwrap()
+                .model
+                .id,
+            "big"
         );
         r.clear_sticky("s");
         assert_eq!(

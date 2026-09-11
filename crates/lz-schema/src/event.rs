@@ -58,6 +58,23 @@ pub enum Event {
         /// Why: `auto` (initial pick) or the failure that caused a switch.
         reason: String,
     },
+    /// What one model step was built from: model, skills, MCP servers, size.
+    #[serde(rename = "step.context")]
+    StepContext {
+        #[serde(rename = "sessionID")]
+        session_id: SessionId,
+        model: String,
+        /// routing reason (`smart for coding`, `sticky`, `fixed`)
+        reason: String,
+        /// skills described in the prompt this step
+        skills: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        attached_skill: Option<String>,
+        mcp_loaded: Vec<String>,
+        mcp_skipped: Vec<String>,
+        /// estimated prompt tokens sent
+        tokens: u64,
+    },
     #[serde(rename = "session.compacted")]
     SessionCompacted {
         #[serde(rename = "sessionID")]
@@ -162,6 +179,7 @@ impl Event {
             | Event::SessionDiff { session_id, .. }
             | Event::SessionCompacted { session_id }
             | Event::ModelRouted { session_id, .. }
+            | Event::StepContext { session_id, .. }
             | Event::MessageUpdated { session_id, .. }
             | Event::MessageRemoved { session_id, .. }
             | Event::PartUpdated { session_id, .. }
@@ -188,6 +206,7 @@ impl Event {
             Event::SessionDiff { .. } => "session.diff",
             Event::SessionCompacted { .. } => "session.compacted",
             Event::ModelRouted { .. } => "model.routed",
+            Event::StepContext { .. } => "step.context",
             Event::MessageUpdated { .. } => "message.updated",
             Event::MessageRemoved { .. } => "message.removed",
             Event::PartUpdated { .. } => "message.part.updated",

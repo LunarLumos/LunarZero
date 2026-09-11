@@ -225,6 +225,7 @@ impl Engine {
         (
             crate::provider::Model,
             Option<crate::session::processor::RouteInput>,
+            String,
         ),
         String,
     > {
@@ -262,6 +263,7 @@ impl Engine {
                 model_id: pick.model.id.clone(),
                 reason: format!("routed:{}", pick.reason),
             });
+            let reason = pick.reason.clone();
             return Ok((
                 pick.model,
                 Some(crate::session::processor::RouteInput {
@@ -269,6 +271,7 @@ impl Engine {
                     need,
                     sticky_minutes,
                 }),
+                reason,
             ));
         }
         let pool_connected = self
@@ -286,9 +289,10 @@ impl Engine {
                     need,
                     sticky_minutes: 0,
                 }),
+                "chosen".into(),
             ));
         }
-        Ok((model.clone(), None))
+        Ok((model.clone(), None, "chosen".into()))
     }
 
     pub fn registry(&self) -> Arc<Registry> {
@@ -617,6 +621,17 @@ impl Engine {
     /// the skills relevant to the prompt are described (others by name), and
     /// a clearly matching skill is attached in full so no tool call is needed.
     pub async fn skills_prompt(&self, agent: &crate::agent::Agent, user_text: &str) -> Option<String> {
+        self.skills_prompt_detailed(agent, user_text)
+            .await
+            .map(|(s, _, _)| s)
+    }
+
+    /// (prompt block, skills described, skill attached in full)
+    pub async fn skills_prompt_detailed(
+        &self,
+        agent: &crate::agent::Agent,
+        user_text: &str,
+    ) -> Option<(String, Vec<String>, Option<String>)> {
         if crate::permission::evaluate("skill", "*", &[&agent.permission]).action
             == lz_schema::permission::Action::Deny
         {
@@ -629,7 +644,8 @@ impl Engine {
         }
         let smart = self.config().smart.clone().unwrap_or_default();
         if !smart.skills.unwrap_or(true) || user_text.trim().is_empty() {
-            return Some(crate::skill::format(&list, false));
+            let names = list.iter().map(|s| s.name.clone()).collect();
+            return Some((crate::skill::format(&list, false), names, None));
         }
         let ranked = crate::skill::rank(&list, user_text);
         let relevant: Vec<&crate::skill::Skill> = ranked
@@ -639,6 +655,7 @@ impl Engine {
             .map(|(_, s)| *s)
             .collect();
         let mut out = String::new();
+        let mut attached = None;
         if relevant.is_empty() {
             let names: Vec<&str> = list.iter().map(|s| s.name.as_str()).collect();
             out.push_str(&format!(
@@ -666,9 +683,11 @@ impl Engine {
                     best.name,
                     best.content.trim()
                 ));
+                attached = Some(best.name.clone());
             }
         }
-        Some(out)
+        let described = relevant.iter().map(|s| s.name.clone()).collect();
+        Some((out, described, attached))
     }
     pub async fn snapshot_track(&self) -> Option<String> {
         self.snapshot.track().await

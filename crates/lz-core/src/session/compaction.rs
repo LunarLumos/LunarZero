@@ -416,7 +416,7 @@ pub async fn process(
         tokens: history.iter().map(|m| m.parts.len() as u64 * 200).sum::<u64>() / 4,
         user_text: String::new(),
     };
-    let (model, route) = engine
+    let (model, route, _) = engine
         .route_model(&model, need, &parent.session_id)
         .map_err(|e| anyhow::anyhow!(e))?;
 

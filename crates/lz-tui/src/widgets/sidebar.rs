@@ -54,6 +54,52 @@ pub fn render(f: &mut Frame, area: Rect, store: &Store, session_id: &str, theme:
         lines.push(Line::from(Span::styled(format!("${cost:.4}"), theme.muted())));
         lines.push(Line::from(""));
     }
+    // what the current step is built from: model + why, skills, MCP servers
+    if let Some(step) = store.step.get(session_id) {
+        lines.push(h("THIS TURN"));
+        lines.push(Line::from(vec![
+            Span::styled(step.model.clone(), theme.text()),
+            Span::styled(format!(" · {}", step.reason), theme.muted()),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("~{} tokens sent", fmt_tokens(step.tokens as f64)),
+            theme.muted(),
+        )));
+        if let Some(a) = &step.attached_skill {
+            lines.push(Line::from(vec![
+                Span::styled("skill ", theme.muted()),
+                Span::styled(a.clone(), theme.fg("accent")),
+                Span::styled(" attached", theme.muted()),
+            ]));
+        }
+        if !step.skills.is_empty() {
+            let others: Vec<&str> = step
+                .skills
+                .iter()
+                .filter(|s| Some(*s) != step.attached_skill.as_ref())
+                .map(String::as_str)
+                .collect();
+            if !others.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("skills ", theme.muted()),
+                    Span::styled(others.join(", "), theme.text()),
+                ]));
+            }
+        }
+        if !step.mcp_loaded.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("mcp ", theme.muted()),
+                Span::styled(step.mcp_loaded.join(", "), theme.fg("success")),
+            ]));
+        }
+        if !step.mcp_skipped.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("mcp idle ", theme.muted()),
+                Span::styled(step.mcp_skipped.join(", "), theme.muted()),
+            ]));
+        }
+        lines.push(Line::from(""));
+    }
     if let Some(diffs) = store.diffs.get(session_id)
         && !diffs.is_empty()
     {
@@ -109,7 +155,7 @@ pub fn render(f: &mut Frame, area: Rect, store: &Store, session_id: &str, theme:
     if let Some(todos) = store.todos.get(session_id)
         && !todos.is_empty()
     {
-        lines.push(h("TODO"));
+        lines.push(h("PLAN"));
         for t in todos {
             let (g, style) = match t.status.as_str() {
                 "completed" => ("☑", theme.muted().add_modifier(Modifier::CROSSED_OUT)),

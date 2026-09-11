@@ -3058,7 +3058,11 @@ impl App {
                 lines.push(Line::from(vec![
                     Span::styled("↻ ", self.theme.fg("warning")),
                     Span::styled(
-                        format!("Retry {attempt} in {secs}s: {message}"),
+                        if message.starts_with("waiting") {
+                            format!("{message} — {secs}s left")
+                        } else {
+                            format!("Retry {attempt} in {secs}s: {message}")
+                        },
                         self.theme.fg("warning"),
                     ),
                 ]));

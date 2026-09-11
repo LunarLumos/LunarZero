@@ -577,7 +577,8 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 .unwrap_or_default(),
         };
         let user_text = need.user_text.clone();
-        let (model, route) = match engine.route_model(&model, need, &session_id) {
+        let need_tokens = need.tokens;
+        let (model, route, route_reason) = match engine.route_model(&model, need, &session_id) {
             Ok(v) => v,
             Err(message) => {
                 let err = MessageError::Unknown { message, r#ref: None };
@@ -702,6 +703,8 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
         // smart.mcp: send an MCP server's tools only when the prompt (or this
         // session's history) relates to it; the rest are named in one line
         let mut mcp_note: Option<String> = None;
+        let mut mcp_loaded: Vec<String> = Vec::new();
+        let mut mcp_skipped: Vec<String> = Vec::new();
         {
             let smart = engine.config().smart.clone().unwrap_or_default();
             if smart.mcp.unwrap_or(true) {
@@ -729,6 +732,9 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                         if !relevant {
                             drop_ids.extend(ids.iter().cloned());
                             skipped.push(format!("{name} ({} tools)", ids.len()));
+                            mcp_skipped.push(name.clone());
+                        } else {
+                            mcp_loaded.push(name.clone());
                         }
                     }
                     if !drop_ids.is_empty() {
@@ -787,9 +793,23 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
         if let Some(note) = mcp_note {
             rest.push(note);
         }
-        if let Some(skills) = engine.skills_prompt(&agent, &user_text).await {
+        let mut skills_described: Vec<String> = Vec::new();
+        let mut attached_skill: Option<String> = None;
+        if let Some((skills, described, attached)) = engine.skills_prompt_detailed(&agent, &user_text).await {
             rest.push(skills);
+            skills_described = described;
+            attached_skill = attached;
         }
+        engine.bus.publish(Event::StepContext {
+            session_id: session_id.clone(),
+            model: format!("{}/{}", model.provider_id, model.id),
+            reason: route_reason.clone(),
+            skills: skills_described,
+            attached_skill,
+            mcp_loaded: mcp_loaded.clone(),
+            mcp_skipped: mcp_skipped.clone(),
+            tokens: need_tokens,
+        });
         if let Some(extra) = &last_user.system {
             rest.push(extra.clone());
         }

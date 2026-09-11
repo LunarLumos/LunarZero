@@ -34,6 +34,19 @@ pub struct Store {
     pub loaded: HashSet<String>,
     /// session → (provider, model, reason) last chosen by the free-pool router.
     pub routed: HashMap<String, (String, String, String)>,
+    /// session → what the latest model step was built from.
+    pub step: HashMap<String, StepInfo>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StepInfo {
+    pub model: String,
+    pub reason: String,
+    pub skills: Vec<String>,
+    pub attached_skill: Option<String>,
+    pub mcp_loaded: Vec<String>,
+    pub mcp_skipped: Vec<String>,
+    pub tokens: u64,
 }
 
 impl Store {
@@ -113,6 +126,29 @@ impl Store {
                 self.diffs.insert(session_id, diff);
             }
             Event::SessionCompacted { .. } => {}
+            Event::StepContext {
+                session_id,
+                model,
+                reason,
+                skills,
+                attached_skill,
+                mcp_loaded,
+                mcp_skipped,
+                tokens,
+            } => {
+                self.step.insert(
+                    session_id,
+                    StepInfo {
+                        model,
+                        reason,
+                        skills,
+                        attached_skill,
+                        mcp_loaded,
+                        mcp_skipped,
+                        tokens,
+                    },
+                );
+            }
             Event::ModelRouted {
                 session_id,
                 provider_id,
