@@ -181,6 +181,11 @@
         <p class="muted" style="font-size:12px">Theme and portal settings apply the next time <span class="mono">lz</span> starts.</p>
       </div>
       <div class="card form">
+        <h3>Skills</h3>
+        <div class="row"><input type="text" id="skill-src" placeholder="owner/repo or GitHub URL (sub-folder ok)" style="flex:1"><label class="muted"><input type="checkbox" id="skill-project"> project only</label><button class="primary" id="skill-install">Install</button></div>
+        <div id="s-skills" class="muted" style="font-size:12.5px;margin-top:8px"></div>
+      </div>
+      <div class="card form">
         <h3>Agents</h3>
         <div id="s-agents" class="muted" style="font-size:12.5px"></div>
         <p class="muted" style="font-size:12px">Add your own as <span class="mono">.lunarzero/agent/&lt;name&gt;.md</span> (frontmatter = settings, body = system prompt).</p>
@@ -406,10 +411,21 @@ async function settings() {
   $('#s-agent').innerHTML = '<option value="">build</option>' + cfgState.agents.filter(a => a.mode !== 'subagent').map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
   $('#s-theme').innerHTML = THEMES.map(t => `<option value="${t}">${t}</option>`).join('');
   $('#s-agents').innerHTML = cfgState.agents.map(a => `<div><b>${esc(a.name)}</b> <span class="tag">${esc(a.mode)}</span>${a.builtin ? '' : '<span class="tag">custom</span>'} ${a.model ? '<span class="mono">' + esc(a.model) + '</span>' : ''}<div>${esc(a.description || '')}</div></div>`).join('');
-  fillForm();
+  fillForm(); renderSkills();
   $('#raw-files').innerHTML = cfgState.files.map(f => `<details class="raw"><summary>${esc(f.scope)} — <span class="mono">${esc(f.path)}</span>${f.exists ? '' : ' (not created yet)'} · ${esc(f.description)}</summary><textarea rows="14" data-raw="${esc(f.scope)}">${esc(f.text)}</textarea><div class="row" style="margin:6px 0 12px"><button class="primary" data-rawsave="${esc(f.scope)}">Save file</button></div></details>`).join('');
   document.querySelectorAll('[data-rawsave]').forEach(b => b.onclick = async () => { const ta = document.querySelector(`textarea[data-raw="${b.dataset.rawsave}"]`); try { await api('/config/' + b.dataset.rawsave, { method: 'PUT', body: JSON.stringify({ text: ta.value }) }); toast('Saved ' + b.dataset.rawsave + ' config'); settings(); loadMeta(); } catch (e) { toast(e.message, true); } });
 }
+async function renderSkills() {
+  const list = await api('/skills');
+  $('#s-skills').innerHTML = list.map(sk => `<div style="display:flex;gap:8px;align-items:baseline"><b>${esc(sk.name)}</b><span style="flex:1">${esc(sk.description)}</span>${sk.installed ? `<button class="danger" data-skill-rm="${esc(sk.name)}">remove</button>` : '<span class="tag">local</span>'}</div>`).join('') || 'No skills yet — paste a GitHub link above.';
+  document.querySelectorAll('[data-skill-rm]').forEach(b => b.onclick = async () => { if (!confirm('Remove skill ' + b.dataset.skillRm + '?')) return; try { await api('/skills/' + encodeURIComponent(b.dataset.skillRm), { method: 'DELETE' }); toast('Removed'); renderSkills(); } catch (e) { toast(e.message, true); } });
+}
+$('#skill-install').onclick = async () => {
+  const source = $('#skill-src').value.trim(); if (!source) return;
+  $('#skill-install').disabled = true; toast('Cloning ' + source + '…');
+  try { const list = await api('/skills', { method: 'POST', body: JSON.stringify({ source, project: $('#skill-project').checked }) }); toast('Installed: ' + list.map(s => s.name).join(', ')); $('#skill-src').value = ''; renderSkills(); }
+  catch (e) { toast(e.message, true); } finally { $('#skill-install').disabled = false; }
+};
 function scopeFile() { return cfgState.files.find(f => f.scope === $('#cfg-scope').value); }
 function fillForm() {
   const m = cfgState.merged, pool = m.pool || {}, perm = (typeof m.permission === 'object' && m.permission) || {};

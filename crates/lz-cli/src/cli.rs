@@ -77,6 +77,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Skills: list, install from GitHub, remove, update
+    Skill {
+        #[command(subcommand)]
+        cmd: SkillCommand,
+    },
     /// Manage MCP servers
     Mcp {
         #[command(subcommand)]
@@ -198,6 +203,23 @@ pub enum AuthCommand {
     },
     /// Remove a stored credential
     Logout { provider: Option<String> },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SkillCommand {
+    /// Skills visible in this project (with where they come from)
+    List,
+    /// Install from `owner/repo`, a GitHub URL (optionally to a sub-folder), or any git URL
+    Install {
+        source: String,
+        /// Install for this project only (`.lunarzero/skills/`) instead of globally
+        #[arg(long)]
+        project: bool,
+    },
+    /// Remove an installed skill
+    Remove { name: String },
+    /// Re-install every skill that was installed from a repository
+    Update,
 }
 
 #[derive(Subcommand, Debug)]

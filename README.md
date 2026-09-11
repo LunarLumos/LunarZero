@@ -119,6 +119,7 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
 | `lz auth list\|login\|logout` | provider API keys (`~/.local/share/lunarzero/auth.json`) |
 | `lz models [provider] [--refresh]` | list models |
 | `lz agent list\|create` | agents (built-in + `.lunarzero/agent/*.md`) |
+| `lz skill list\|install <src> [--project]\|remove\|update` | skills; `<src>` = `owner/repo`, a GitHub link (sub-folder ok) or git URL |
 | `lz mcp list\|add <name> --command … \| --url …` | MCP servers |
 | `lz pool setup\|list\|status` | free-tier pool: providers & keys, models & limits, usage |
 | `lz web [--port 7411] [--no-open]` | run the web portal on its own (it also starts with the TUI) |
@@ -133,9 +134,14 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
 `pageup`/`pagedown` scroll · `ctrl+x` then: `n` new · `l` sessions · `m` models · `a` agents ·
 `t` themes · `b` sidebar · `c` compact · `u` undo · `r` redo · `e` editor · `x` export · `?` help.
 
-Slash commands: `/new /sessions /models /agents /variants /mcps /themes /connect /skills /help
-/status /compact /undo /redo /fork /rename /export /copy /editor /init /details /thinking /exit`
+Slash commands: `/new /sessions /models /agents /variants /mcps /themes /connect /skills /install
+/web /help /status /compact /undo /redo /fork /rename /export /copy /editor /init /details /thinking /exit`
 plus your `command/*.md`, skills and MCP prompts.
+
+Skills (`SKILL.md` folders) are found in `.lunarzero/skills`, `~/.config/lunarzero/skills`, `.claude/skills`,
+`.agents/skills` and `skills.paths`. Install from GitHub with `lz skill install owner/repo` (or a link to
+a sub-folder), `/install …` in the TUI, the portal's Settings tab, or just tell the agent
+"install the skill at <link>" — it runs the installer for you. `skills.urls` in config auto-installs on start.
 
 ## Layout
 

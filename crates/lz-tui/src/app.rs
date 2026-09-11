@@ -169,6 +169,10 @@ const SLASH: &[(&str, &str)] = &[
     ("details", "Toggle tool details"),
     ("thinking", "Toggle thinking blocks"),
     ("web", "Open the web portal (keys, pool, settings, chat)"),
+    (
+        "install",
+        "Install a skill from GitHub: /install owner/repo or URL",
+    ),
     ("exit", "Exit"),
 ];
 
@@ -1665,6 +1669,32 @@ impl App {
             }
             "details" => self.toggle_details(),
             "thinking" => self.toggle_thinking(),
+            "install" => {
+                if args.trim().is_empty() {
+                    self.toast(
+                        ToastKind::Info,
+                        "Usage: /install owner/repo  (or a GitHub URL, add --project for this project only)",
+                    );
+                } else {
+                    let project = args.contains("--project");
+                    let source = args.replace("--project", "").trim().to_string();
+                    let api = self.api.clone();
+                    self.toast(ToastKind::Info, format!("Installing skill from {source}…"));
+                    self.spawn(async move {
+                        let list = api.install_skill(&source, !project).await?;
+                        let names: Vec<String> = list.into_iter().map(|s| s.name).collect();
+                        Ok(Some(Msg::Toast(
+                            ToastKind::Success,
+                            format!(
+                                "Installed skill{}: {}",
+                                if names.len() == 1 { "" } else { "s" },
+                                names.join(", ")
+                            ),
+                        )))
+                    });
+                    self.refresh_meta();
+                }
+            }
             "web" => match self.web_url.clone() {
                 Some(url) => {
                     crate::clipboard::copy(&url);

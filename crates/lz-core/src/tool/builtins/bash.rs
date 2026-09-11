@@ -364,6 +364,16 @@ impl Tool for BashTool {
         ctx.report(None, Some(json!({ "output": "" })));
 
         let mut cmd = tokio::process::Command::new(&shell);
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(bin) = exe.parent()
+        {
+            let path = std::env::var("PATH").unwrap_or_default();
+            if !path.split(':').any(|p| Path::new(p) == bin) {
+                cmd.env("PATH", format!("{}:{path}", bin.display()));
+            }
+            // exact path to this binary, immune to shell rc files reordering PATH
+            cmd.env("LZ_BIN", &exe);
+        }
         cmd.arg("-c")
             .arg(&args.command)
             .current_dir(&cwd)

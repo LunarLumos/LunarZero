@@ -80,6 +80,8 @@ pub async fn start(engine: Arc<lz_core::Engine>, port: u16, version: &str) -> an
         .route("/permission/{id}", post(permission_reply))
         .route("/question/{id}", post(question_reply))
         .route("/agents", get(agents))
+        .route("/skills", get(skills_list).post(skill_install))
+        .route("/skills/{name}", axum::routing::delete(skill_remove))
         .route("/models", get(models))
         .route("/config", get(config_get))
         .route("/config/{scope}", put(config_put))
@@ -633,6 +635,35 @@ async fn question_reply(
 async fn agents(State(s): St) -> Result<Json<Value>, ApiErr> {
     let list = EngineApi::agents(&*s.engine).await.map_err(err)?;
     Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)))
+}
+
+async fn skills_list(State(s): St) -> Result<Json<Value>, ApiErr> {
+    let list = EngineApi::skills(&*s.engine).await.map_err(err)?;
+    let rows: Vec<Value> = list
+        .into_iter()
+        .map(|sk| {
+            let installed = std::path::Path::new(&sk.location).parent().is_some_and(|d| d.join(lz_core::skill_install::META_FILE).exists());
+            json!({ "name": sk.name, "description": sk.description, "location": sk.location, "installed": installed })
+        })
+        .collect();
+    Ok(Json(Value::Array(rows)))
+}
+
+#[derive(serde::Deserialize)]
+struct SkillInstallBody {
+    source: String,
+    #[serde(default)]
+    project: bool,
+}
+
+async fn skill_install(State(s): St, Json(b): Json<SkillInstallBody>) -> Result<Json<Value>, ApiErr> {
+    let list = s.engine.install_skill(&b.source, !b.project).await.map_err(err)?;
+    Ok(Json(serde_json::to_value(list).unwrap_or(Value::Null)))
+}
+
+async fn skill_remove(State(s): St, Path(name): Path<String>) -> Result<Json<Value>, ApiErr> {
+    s.engine.remove_skill(&name).await.map_err(err)?;
+    Ok(Json(json!({ "ok": true })))
 }
 
 async fn models(State(s): St) -> Result<Json<Value>, ApiErr> {

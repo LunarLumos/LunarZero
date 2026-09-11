@@ -169,6 +169,34 @@ impl Engine {
         if !opts.offline && engine.config().mcp.as_ref().is_some_and(|m| !m.is_empty()) {
             engine.reload_mcp().await;
         }
+        // skills.urls: install anything missing, in the background
+        let urls = engine
+            .config()
+            .skills
+            .as_ref()
+            .and_then(|s| s.urls.clone())
+            .unwrap_or_default();
+        if !opts.offline && !urls.is_empty() {
+            let e = engine.clone();
+            tokio::spawn(async move {
+                let results = crate::skill_install::sync_urls(&e.paths, &urls).await;
+                let mut any = false;
+                for r in results {
+                    match r {
+                        Ok(list) => {
+                            any |= !list.is_empty();
+                            for i in list {
+                                tracing::info!(skill = i.name, "installed skill from skills.urls");
+                            }
+                        }
+                        Err(err) => tracing::warn!("skills.urls: {err}"),
+                    }
+                }
+                if any {
+                    let _ = e.reload().await;
+                }
+            });
+        }
         Ok(engine)
     }
 
@@ -807,6 +835,27 @@ impl EngineApi for Engine {
     }
     async fn remove_auth(&self, provider: &str) -> ApiResult<()> {
         self.auth.remove(provider).map_err(Self::err)?;
+        self.reload().await.map_err(Self::err)
+    }
+    async fn install_skill(&self, source: &str, global: bool) -> ApiResult<Vec<SkillInfo>> {
+        let src = crate::skill_install::Source::parse(source).map_err(ApiError::invalid)?;
+        let target = crate::skill_install::target_dir(&self.paths, &self.project.worktree, global);
+        let installed = crate::skill_install::install(&src, &target)
+            .await
+            .map_err(ApiError::invalid)?;
+        self.reload().await.map_err(Self::err)?;
+        Ok(installed
+            .into_iter()
+            .map(|i| SkillInfo {
+                name: i.name,
+                description: i.description,
+                location: i.path.display().to_string(),
+            })
+            .collect())
+    }
+    async fn remove_skill(&self, name: &str) -> ApiResult<()> {
+        crate::skill_install::remove(&self.paths, &self.project.worktree, name)
+            .map_err(ApiError::not_found)?;
         self.reload().await.map_err(Self::err)
     }
     async fn mcp_connect(&self, name: &str) -> ApiResult<()> {

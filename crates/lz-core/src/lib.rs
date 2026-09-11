@@ -17,6 +17,7 @@ pub mod provider;
 pub mod question;
 pub mod session;
 pub mod skill;
+pub mod skill_install;
 pub mod snapshot;
 pub mod storage;
 pub mod tool;

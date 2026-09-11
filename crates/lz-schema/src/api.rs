@@ -347,6 +347,9 @@ pub trait EngineApi: Send + Sync + 'static {
     async fn read_file(&self, path: &str) -> ApiResult<String>;
     async fn set_auth(&self, provider: &str, auth: AuthInfo) -> ApiResult<()>;
     async fn remove_auth(&self, provider: &str) -> ApiResult<()>;
+    /// Install skills from a git source (`owner/repo`, GitHub URL, optional sub-path).
+    async fn install_skill(&self, source: &str, global: bool) -> ApiResult<Vec<SkillInfo>>;
+    async fn remove_skill(&self, name: &str) -> ApiResult<()>;
     async fn mcp_connect(&self, name: &str) -> ApiResult<()>;
     async fn mcp_disconnect(&self, name: &str) -> ApiResult<()>;
 

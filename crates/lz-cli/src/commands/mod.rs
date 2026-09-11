@@ -6,6 +6,7 @@ mod models;
 mod pool;
 mod run;
 mod session;
+mod skill;
 mod tui;
 mod upgrade;
 mod web;
@@ -17,6 +18,7 @@ pub async fn dispatch(cli: Cli) -> anyhow::Result<i32> {
         Some(Command::Run(args)) => run::exec(args).await,
         Some(Command::Auth { cmd }) => auth::run(cmd).await,
         Some(Command::Agent { cmd }) => agent::run(cmd).await,
+        Some(Command::Skill { cmd }) => skill::run(cmd).await,
         Some(Command::Models { provider, refresh }) => models::run(provider, refresh).await,
         Some(Command::Session { cmd }) => session::run(cmd).await,
         Some(Command::Export { session, output }) => session::export(session, output).await,
