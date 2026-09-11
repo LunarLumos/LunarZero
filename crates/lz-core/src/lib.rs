@@ -16,6 +16,7 @@ pub mod permission;
 pub mod project;
 pub mod provider;
 pub mod question;
+pub mod recommended;
 pub mod session;
 pub mod skill;
 pub mod skill_install;

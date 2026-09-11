@@ -1,0 +1,26 @@
+{
+  "mcp": [
+    { "alias": "filesystem",          "source": "npm:@modelcontextprotocol/server-filesystem", "args": ["."], "description": "Read/write files outside the repo with explicit allowed roots", "note": "pass the directories to expose as extra args" },
+    { "alias": "memory",              "source": "npm:@modelcontextprotocol/server-memory", "description": "Persistent knowledge-graph memory across sessions" },
+    { "alias": "sequential-thinking", "source": "npm:@modelcontextprotocol/server-sequential-thinking", "description": "Step-by-step reasoning scratchpad for hard problems (1 tool)" },
+    { "alias": "fetch",               "source": "pypi:mcp-server-fetch", "description": "Fetch web pages as markdown (Python, uvx)" },
+    { "alias": "git",                 "source": "pypi:mcp-server-git", "description": "Git status/diff/log/commit tools (Python, uvx)" },
+    { "alias": "github",              "source": "npm:@modelcontextprotocol/server-github", "description": "GitHub issues, PRs, repos — needs GITHUB_PERSONAL_ACCESS_TOKEN", "env": ["GITHUB_PERSONAL_ACCESS_TOKEN"] },
+    { "alias": "playwright",          "source": "npm:@playwright/mcp", "description": "Drive a real browser: navigate, click, fill, screenshot" },
+    { "alias": "puppeteer",           "source": "npm:@modelcontextprotocol/server-puppeteer", "description": "Headless Chrome automation and screenshots" },
+    { "alias": "context7",            "source": "npm:@upstash/context7-mcp", "description": "Up-to-date library documentation lookup for any package" },
+    { "alias": "postgres",            "source": "npm:@modelcontextprotocol/server-postgres", "args": ["postgresql://localhost/postgres"], "description": "Read-only SQL over a Postgres database (pass the connection URL)" },
+    { "alias": "sqlite",              "source": "pypi:mcp-server-sqlite", "args": ["--db-path", "./data.db"], "description": "Query and inspect a SQLite database" },
+    { "alias": "brave-search",        "source": "npm:@modelcontextprotocol/server-brave-search", "description": "Web search — needs BRAVE_API_KEY", "env": ["BRAVE_API_KEY"] },
+    { "alias": "slack",               "source": "npm:@modelcontextprotocol/server-slack", "description": "Read/post Slack messages — needs SLACK_BOT_TOKEN", "env": ["SLACK_BOT_TOKEN", "SLACK_TEAM_ID"] }
+  ],
+  "skills": [
+    { "alias": "pdf",             "source": "https://github.com/anthropics/skills/tree/main/skills/pdf", "description": "Read, create, merge and fill PDF files" },
+    { "alias": "docx",            "source": "https://github.com/anthropics/skills/tree/main/skills/docx", "description": "Create and edit Word documents" },
+    { "alias": "xlsx",            "source": "https://github.com/anthropics/skills/tree/main/skills/xlsx", "description": "Create and analyse Excel spreadsheets" },
+    { "alias": "pptx",            "source": "https://github.com/anthropics/skills/tree/main/skills/pptx", "description": "Build PowerPoint decks" },
+    { "alias": "frontend-design", "source": "https://github.com/anthropics/skills/tree/main/skills/frontend-design", "description": "Polished, distinctive web UI instead of generic layouts" },
+    { "alias": "mcp-builder",     "source": "https://github.com/anthropics/skills/tree/main/skills/mcp-builder", "description": "Write your own MCP server correctly" },
+    { "alias": "webapp-testing",  "source": "https://github.com/anthropics/skills/tree/main/skills/webapp-testing", "description": "Test web apps end-to-end with Playwright" }
+  ]
+}

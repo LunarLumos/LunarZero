@@ -492,10 +492,7 @@ impl Engine {
         if list.is_empty() {
             return None;
         }
-        Some(format!(
-            "Skills provide specialized instructions and workflows for specific tasks.\nUse the skill tool to load a skill when a task matches its description.\n{}",
-            crate::skill::format(&list, true)
-        ))
+        Some(crate::skill::format(&list, false))
     }
     pub async fn snapshot_track(&self) -> Option<String> {
         self.snapshot.track().await

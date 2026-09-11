@@ -99,6 +99,23 @@ pub fn default_name(source: &str, subpath: Option<&str>) -> String {
 /// Install from `source`; returns the launch description.
 pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Result<McpInstalled, String> {
     let src = source.trim();
+    // curated alias, e.g. `github` → npm:@modelcontextprotocol/server-github (+ default args)
+    if let Some(rec) = crate::recommended::mcp(src) {
+        let mut r = Box::pin(install(
+            paths,
+            &rec.source,
+            Some(name.unwrap_or_else(|| rec.alias.clone())),
+        ))
+        .await?;
+        r.command.extend(rec.args.iter().cloned());
+        if !rec.env.is_empty() {
+            r.notes.push(format!("needs env: {}", rec.env.join(", ")));
+        }
+        if !rec.note.is_empty() {
+            r.notes.push(rec.note.clone());
+        }
+        return Ok(r);
+    }
     if let Some(pkg) = src.strip_prefix("npm:") {
         if !on_path("npx") {
             return Err("npx (Node.js) is required for npm packages".into());

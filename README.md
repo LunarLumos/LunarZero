@@ -143,6 +143,12 @@ Skills (`SKILL.md` folders) are found in `.lunarzero/skills`, `~/.config/lunarze
 a sub-folder), `/install …` in the TUI, the portal's Settings tab, or just tell the agent
 "install the skill at <link>" — it runs the installer for you. `skills.urls` in config auto-installs on start.
 
+Ten skills ship inside the binary and load on demand — `debugging`, `testing`, `git-workflow`,
+`code-review`, `refactoring`, `performance`, `security-review`, `codebase-map`, `api-design`,
+`release` (about 170 tokens for the whole list; `"skills": {"builtin": false}` turns them off).
+`lz recommend` shows curated MCP servers and skills installable by alias:
+`lz mcp install github`, `lz mcp install playwright`, `lz skill install pdf`, ….
+
 MCP servers work the same way: `lz mcp install https://github.com/modelcontextprotocol/servers/tree/main/src/memory`
 clones, runs `npm install`/`build` (or `uv`/venv for Python, `cargo`/`go build`), finds the entry point,
 writes the `mcp.<name>` config entry and connects it; `npm:<pkg>` / `pypi:<pkg>` register `npx -y` / `uvx`

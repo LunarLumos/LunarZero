@@ -19,6 +19,36 @@ pub async fn dispatch(cli: Cli) -> anyhow::Result<i32> {
         Some(Command::Auth { cmd }) => auth::run(cmd).await,
         Some(Command::Agent { cmd }) => agent::run(cmd).await,
         Some(Command::Skill { cmd }) => skill::run(cmd).await,
+        Some(Command::Recommend) => {
+            let r = lz_core::recommended::catalog();
+            println!("Built-in skills (always available, loaded on demand):");
+            for (name, text) in lz_core::skill::BUILTIN {
+                let desc = text
+                    .lines()
+                    .find_map(|l| l.strip_prefix("description: "))
+                    .unwrap_or("");
+                println!("  {name:<20} {desc}");
+            }
+            println!("\nMCP servers — install with `lz mcp install <alias>` (or /install --mcp <alias>):");
+            for m in &r.mcp {
+                println!(
+                    "  {:<20} {}{}",
+                    m.alias,
+                    m.description,
+                    if m.env.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  [env: {}]", m.env.join(", "))
+                    }
+                );
+            }
+            println!("\nSkills — install with `lz skill install <alias>`:");
+            for s in &r.skills {
+                println!("  {:<20} {}", s.alias, s.description);
+            }
+            println!("\nEach MCP server adds its tools to every request; install the ones you use.");
+            Ok(0)
+        }
         Some(Command::Models { provider, refresh }) => models::run(provider, refresh).await,
         Some(Command::Session { cmd }) => session::run(cmd).await,
         Some(Command::Export { session, output }) => session::export(session, output).await,

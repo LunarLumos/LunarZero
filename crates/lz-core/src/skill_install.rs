@@ -24,6 +24,9 @@ impl Source {
     /// `https://…/repo.git`, `git@host:owner/repo.git`, with an optional
     /// `#ref` or `@ref` suffix.
     pub fn parse(input: &str) -> Result<Source, String> {
+        if let Some(rec) = crate::recommended::skill(input.trim()) {
+            return Source::parse(&rec.source);
+        }
         let mut s = input.trim().trim_end_matches('/').to_string();
         let mut git_ref = None;
         if let Some((base, r)) = s.rsplit_once('#') {

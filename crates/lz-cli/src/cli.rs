@@ -77,6 +77,8 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Curated MCP servers and skills you can install by alias
+    Recommend,
     /// Skills: list, install from GitHub, remove, update
     Skill {
         #[command(subcommand)]

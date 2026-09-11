@@ -285,6 +285,9 @@ pub struct CommandConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct SkillsConfig {
+    /// Ship the built-in skills (debugging, testing, git-workflow, …). Default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub builtin: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paths: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

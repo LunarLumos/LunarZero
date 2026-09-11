@@ -82,6 +82,12 @@ pub async fn start(engine: Arc<lz_core::Engine>, port: u16, version: &str) -> an
         .route("/agents", get(agents))
         .route("/skills", get(skills_list).post(skill_install))
         .route("/skills/{name}", axum::routing::delete(skill_remove))
+        .route(
+            "/recommended",
+            get(|| async {
+                Json(serde_json::to_value(lz_core::recommended::catalog()).unwrap_or(Value::Null))
+            }),
+        )
         .route("/mcp", get(mcp_list).post(mcp_install))
         .route("/mcp/{name}/toggle", post(mcp_toggle))
         .route("/models", get(models))

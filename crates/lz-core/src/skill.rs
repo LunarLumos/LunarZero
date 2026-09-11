@@ -51,6 +51,27 @@ fn scan(root: &Path, under: Option<&str>, out: &mut Vec<PathBuf>) {
     }
 }
 
+macro_rules! builtin {
+    ($($name:literal),* $(,)?) => {
+        &[$(($name, include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/skills/", $name, "/SKILL.md")))),*]
+    };
+}
+
+/// Skills shipped inside the binary (loaded on demand; user skills with the
+/// same name override them). Disable with `skills.builtin: false`.
+pub const BUILTIN: &[(&str, &str)] = builtin![
+    "api-design",
+    "code-review",
+    "codebase-map",
+    "debugging",
+    "git-workflow",
+    "performance",
+    "refactoring",
+    "release",
+    "security-review",
+    "testing",
+];
+
 pub fn discover(
     paths: &Paths,
     config: &Config,
@@ -96,6 +117,25 @@ pub fn discover(
         scan(&dir, None, &mut matches);
     }
     let mut out = BTreeMap::new();
+    if config.skills.as_ref().and_then(|s| s.builtin).unwrap_or(true) {
+        for (name, text) in BUILTIN {
+            if let Ok(md) = markdown::parse(text) {
+                out.insert(
+                    name.to_string(),
+                    Skill {
+                        name: name.to_string(),
+                        description: md
+                            .data
+                            .get("description")
+                            .and_then(|v| v.as_str())
+                            .map(str::to_string),
+                        location: PathBuf::from(format!("builtin:{name}")),
+                        content: md.content,
+                    },
+                );
+            }
+        }
+    }
     for m in matches {
         let Ok(text) = std::fs::read_to_string(&m) else {
             continue;
@@ -122,13 +162,6 @@ pub fn discover(
     out
 }
 
-fn escape_html(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
 /// Skills this agent may load, sorted by name.
 pub fn available<'a>(skills: &'a BTreeMap<String, Skill>, agent: &crate::agent::Agent) -> Vec<&'a Skill> {
     skills
@@ -145,28 +178,11 @@ pub fn format(list: &[&Skill], verbose: bool) -> String {
     if described.is_empty() {
         return "No skills are currently available.".into();
     }
-    if verbose {
-        let mut lines = vec!["<available_skills>".to_string()];
-        for s in described {
-            lines.push("  <skill>".into());
-            lines.push(format!("    <name>{}</name>", s.name));
-            lines.push(format!(
-                "    <description>{}</description>",
-                s.description.as_deref().unwrap_or("")
-            ));
-            lines.push(format!(
-                "    <location>{}</location>",
-                escape_html(&s.location.display().to_string())
-            ));
-            lines.push("  </skill>".into());
-        }
-        lines.push("</available_skills>".into());
-        return lines.join("\n");
-    }
-    let mut lines = vec!["## Available Skills".to_string()];
+    let _ = verbose;
+    let mut lines = vec!["Skills (load with the skill tool when a task matches):".to_string()];
     for s in described {
         lines.push(format!(
-            "- **{}**: {}",
+            "- {}: {}",
             s.name,
             s.description.as_deref().unwrap_or("")
         ));
