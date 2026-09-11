@@ -17,6 +17,108 @@ use crate::permission::arity;
 use crate::tool::{Tool, ToolCtx, ToolError, ToolResult, parse_args, truncate};
 
 const DEFAULT_TIMEOUT_MS: u64 = 2 * 60 * 1000;
+/// Default for package installs, builds, container and VM start-ups when the
+/// model gives no timeout — these routinely take longer than two minutes.
+const SLOW_TIMEOUT_MS: u64 = 10 * 60 * 1000;
+/// How many times an identical line is kept before the rest are collapsed.
+const REPEAT_KEEP: usize = 3;
+
+fn is_slow_command(cmd: &str) -> bool {
+    const SLOW: &[&str] = &[
+        "npm install",
+        "npm ci",
+        "npm i ",
+        "npm i\n",
+        "npm run build",
+        "npm test",
+        "npx ",
+        "pnpm install",
+        "pnpm i ",
+        "pnpm build",
+        "yarn",
+        "bun install",
+        "pip install",
+        "pip3 install",
+        "uv sync",
+        "uv pip",
+        "poetry install",
+        "cargo build",
+        "cargo test",
+        "cargo install",
+        "cargo run",
+        "cargo check",
+        "cargo clippy",
+        "go build",
+        "go test",
+        "go mod",
+        "docker ",
+        "docker-compose",
+        "colima ",
+        "podman ",
+        "prisma ",
+        "next build",
+        "vite build",
+        "tsc",
+        "make",
+        "cmake",
+        "gradle",
+        "gradlew",
+        "mvn ",
+        "bundle install",
+        "composer install",
+        "brew install",
+        "apt",
+        "dnf ",
+        "pacman",
+        "mix deps",
+        "swift build",
+        "xcodebuild",
+        "flutter ",
+        "terraform",
+        "pulumi",
+        "vercel ",
+        "wrangler",
+        "playwright",
+        "cypress",
+        "jest",
+        "vitest",
+        "pytest",
+    ];
+    let c = format!("{} ", cmd.trim());
+    SLOW.iter().any(|k| c.contains(k))
+}
+
+/// Drop lines that already appeared `REPEAT_KEEP` times (identical after
+/// trimming, at least 16 chars) so warning spam cannot flood the context;
+/// a summary of what was dropped is appended.
+fn collapse_repeats(text: &str) -> String {
+    use std::collections::HashMap;
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    let mut out: Vec<&str> = Vec::new();
+    let mut dropped = 0usize;
+    for line in text.split('\n') {
+        let key = line.trim();
+        if key.len() < 16 {
+            out.push(line);
+            continue;
+        }
+        let n = seen.entry(key).or_insert(0);
+        *n += 1;
+        if *n > REPEAT_KEEP {
+            dropped += 1;
+        } else {
+            out.push(line);
+        }
+    }
+    if dropped == 0 {
+        return text.to_string();
+    }
+    let distinct = seen.values().filter(|&&n| n > REPEAT_KEEP).count();
+    format!(
+        "{}\n[{dropped} repeated lines collapsed ({distinct} distinct); full output saved]",
+        out.join("\n")
+    )
+}
 const MAX_METADATA_LENGTH: usize = 30_000;
 const CWD_CMDS: &[&str] = &["cd", "chdir", "popd", "pushd"];
 const FILE_CMDS: &[&str] = &[
@@ -244,7 +346,8 @@ fn description(shell: &str, max_lines: usize, max_bytes: usize) -> String {
 
 Usage notes:
   - The command argument is required.
-  - You can specify an optional timeout in milliseconds. If not specified, commands will time out after {DEFAULT_TIMEOUT_MS}ms.
+  - You can specify an optional timeout in milliseconds. If not specified, commands will time out after {DEFAULT_TIMEOUT_MS}ms; installs, builds, docker and similar slow commands get {SLOW_TIMEOUT_MS}ms automatically. Never wrap commands in GNU `timeout` (absent on macOS) — use this parameter. Start servers with `&` or in a separate step so the call returns.
+  - Lines that repeat more than a few times (warning spam) are collapsed; the full output is still saved to a file.
   - If the output exceeds {max_lines} lines or {max_bytes} bytes, it will be truncated and the full output will be written to a file. You can use Read with offset/limit to read specific sections or Grep to search the full content. Do NOT use `head`, `tail`, or other truncation commands to limit output; the full output will already be captured to a file for more precise searching.
 
   - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:
@@ -315,7 +418,13 @@ impl Tool for BashTool {
                 "Invalid timeout value: {t}. Timeout must be a positive number."
             )));
         }
-        let timeout_ms = args.timeout.map(|t| t as u64).unwrap_or(DEFAULT_TIMEOUT_MS);
+        let timeout_ms = args.timeout.map(|t| t as u64).unwrap_or_else(|| {
+            if is_slow_command(&args.command) {
+                SLOW_TIMEOUT_MS
+            } else {
+                DEFAULT_TIMEOUT_MS
+            }
+        });
 
         // permissions
         let mut scanned = scan(
@@ -520,6 +629,15 @@ impl Tool for BashTool {
             meta.push("User aborted the command".to_string());
         }
         let raw: String = chunks.iter().map(String::as_str).collect();
+        let full_path = if raw.len() > 4096 && collapse_repeats(&raw).len() < raw.len() {
+            truncate::write(&ctx.engine.paths.tool_output(), &raw).ok()
+        } else {
+            None
+        };
+        let raw = match &full_path {
+            Some(p) => format!("{}\nFull output: {}", collapse_repeats(&raw), p.display()),
+            None => raw,
+        };
         let tail = truncate::output(
             &ctx.engine.paths.tool_output(),
             &raw,
@@ -600,5 +718,32 @@ mod tests {
     fn nested_subshell() {
         let cmds = split_commands("echo $(rm foo)");
         assert!(cmds.iter().any(|(s, _)| s == "rm foo"));
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    #[test]
+    fn slow_commands_get_long_timeout() {
+        assert!(is_slow_command("cd app && npm install"));
+        assert!(is_slow_command("docker-compose up -d"));
+        assert!(is_slow_command("colima start"));
+        assert!(is_slow_command("npx prisma migrate deploy"));
+        assert!(!is_slow_command("ls -la"));
+        assert!(!is_slow_command("git status"));
+    }
+
+    #[test]
+    fn repeated_lines_collapse() {
+        let block =
+            "npm warn ERESOLVE overriding peer dependency\nnpm warn While resolving: @effect/sql-d1@4.0.0\n";
+        let text = format!("{}done: ok\n", block.repeat(50));
+        let out = collapse_repeats(&text);
+        assert!(out.matches("ERESOLVE").count() == 3, "{out}");
+        assert!(out.contains("done: ok"));
+        assert!(out.contains("94 repeated lines collapsed (2 distinct)"), "{out}");
+        assert_eq!(collapse_repeats("a\nb\nc"), "a\nb\nc");
     }
 }

@@ -29,12 +29,7 @@ pub fn render(f: &mut Frame, area: Rect, store: &Store, session_id: &str, theme:
         lines.push(Line::from(""));
         lines.push(h("CONTEXT"));
         let (total, cost) = store.usage(session_id);
-        let limit = s
-            .model
-            .as_ref()
-            .and_then(|m| store.model_info(&m.provider_id, &m.id))
-            .map(|m| m.limit.context)
-            .unwrap_or(0.0);
+        let limit = store.context_limit(session_id);
         let pct = if limit > 0.0 {
             (total / limit * 100.0).min(999.0)
         } else {

@@ -3305,16 +3305,11 @@ impl App {
             left.push(Span::styled(format!(" → {p}/{m}"), theme.muted()));
         }
         if let Some(sid) = &self.session
-            && let Some(s) = self.store.sessions.get(sid)
+            && self.store.sessions.contains_key(sid)
         {
             let (total, cost) = self.store.usage(sid);
             if total > 0.0 {
-                let limit = s
-                    .model
-                    .as_ref()
-                    .and_then(|m| self.store.model_info(&m.provider_id, &m.id))
-                    .map(|mi| mi.limit.context)
-                    .unwrap_or(0.0);
+                let limit = self.store.context_limit(sid);
                 let pct = if limit > 0.0 {
                     format!(" ({:.0}%)", total / limit * 100.0)
                 } else {

@@ -254,6 +254,23 @@ impl Store {
         (context, cost)
     }
 
+    /// Context window the session is really running against: the routed
+    /// model when the session sits on the `lunar` pool, else its own model.
+    pub fn context_limit(&self, session_id: &str) -> f64 {
+        let session = self.sessions.get(session_id);
+        let selected = session.and_then(|s| s.model.as_ref());
+        if let Some((p, m, _)) = self.routed.get(session_id)
+            && selected.is_none_or(|sel| sel.provider_id == "lunar")
+            && let Some(info) = self.model_info(p, m)
+        {
+            return info.limit.context;
+        }
+        selected
+            .and_then(|m| self.model_info(&m.provider_id, &m.id))
+            .map(|m| m.limit.context)
+            .unwrap_or(0.0)
+    }
+
     pub fn model_info(&self, provider: &str, model: &str) -> Option<&ModelInfo> {
         self.providers
             .providers
