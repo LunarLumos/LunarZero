@@ -675,6 +675,7 @@ fn short_error(e: &LlmError) -> String {
     };
     let s = match e {
         LlmError::RateLimited { .. } => "rate limited".to_string(),
+        LlmError::InvalidOutput { message } if message == LOOP_MARKER => "kept repeating itself".to_string(),
         LlmError::Provider {
             status,
             message,
