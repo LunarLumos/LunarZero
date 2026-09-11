@@ -632,7 +632,7 @@ fn failover_worthy(e: &LlmError) -> bool {
     match e {
         LlmError::Aborted | LlmError::ContextOverflow { .. } | LlmError::ContentPolicy { .. } => false,
         LlmError::InvalidOutput { .. } => false,
-        LlmError::Provider { status, .. } => !matches!(status, 413),
+        LlmError::Provider { .. } => true,
         _ => true,
     }
 }

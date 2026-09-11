@@ -168,6 +168,27 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
             parsed.subpath.clone().unwrap_or_default()
         ));
     }
+    // a repository that bundles several servers: ask for one instead of
+    // building a launcher that needs arguments
+    if parsed.subpath.is_none()
+        && let Some((sub, servers)) = bundled_servers(&root)
+    {
+        let _ = std::fs::remove_dir_all(&dir);
+        let base = src.trim_end_matches('/').trim_end_matches(".git");
+        let base = if base.contains("://") {
+            base.to_string()
+        } else {
+            format!("https://github.com/{base}")
+        };
+        let branch = parsed.git_ref.clone().unwrap_or_else(|| "main".into());
+        return Err(format!(
+            "{} bundles {} servers under {sub}/: {}.\nInstall one at a time, e.g.: lz mcp install {base}/tree/{branch}/{sub}/{}",
+            parsed.url,
+            servers.len(),
+            servers.join(", "),
+            servers[0]
+        ));
+    }
     let (runtime, command, cwd) = detect_and_build(&root, &mut log).await?;
     let _ = std::fs::write(dir.join(".lz-mcp.json"), serde_json::json!({ "source": parsed.url, "git_ref": parsed.git_ref, "subpath": parsed.subpath, "installed_at": now_ms() }).to_string());
     Ok(McpInstalled {
@@ -178,6 +199,95 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
         dir: Some(dir.display().to_string()),
         notes: log,
     })
+}
+
+fn requires_python(pyproject: &str) -> Option<String> {
+    pyproject.lines().find_map(|l| {
+        let (k, v) = l.split_once('=')?;
+        (k.trim() == "requires-python").then(|| v.trim().trim_matches('"').to_string())
+    })
+}
+
+/// Does `x.y` satisfy a PEP 440-ish `requires-python` (only `>=`, `<`, `~=`, `==` bounds)?
+fn python_ok(version: (u32, u32), spec: &str) -> bool {
+    spec.split(',').all(|part| {
+        let part = part.trim();
+        let parse = |s: &str| -> Option<(u32, u32)> {
+            let mut it = s.trim().split('.');
+            Some((it.next()?.parse().ok()?, it.next().unwrap_or("0").parse().ok()?))
+        };
+        if let Some(v) = part.strip_prefix(">=").and_then(parse) {
+            version >= v
+        } else if let Some(v) = part.strip_prefix("<=").and_then(parse) {
+            version <= v
+        } else if let Some(v) = part.strip_prefix("~=").and_then(parse) {
+            version.0 == v.0 && version.1 >= v.1
+        } else if let Some(v) = part.strip_prefix("==").and_then(parse) {
+            version == v
+        } else if let Some(v) = part.strip_prefix('>').and_then(parse) {
+            version > v
+        } else if let Some(v) = part.strip_prefix('<').and_then(parse) {
+            version < v
+        } else {
+            true
+        }
+    })
+}
+
+/// A Python on PATH that satisfies the project's `requires-python`.
+fn pick_python(pyproject: &str) -> Option<String> {
+    let spec = requires_python(pyproject).unwrap_or_default();
+    let candidates = [
+        "python3.13",
+        "python3.12",
+        "python3.11",
+        "python3.10",
+        "python3.14",
+        "python3",
+    ];
+    for c in candidates {
+        if !on_path(c) {
+            continue;
+        }
+        let out = std::process::Command::new(c)
+            .arg("-c")
+            .arg("import sys;print(sys.version_info[0],sys.version_info[1])")
+            .output()
+            .ok()?;
+        let s = String::from_utf8_lossy(&out.stdout);
+        let mut it = s.split_whitespace();
+        if let (Some(a), Some(b)) = (it.next(), it.next())
+            && let (Ok(a), Ok(b)) = (a.parse::<u32>(), b.parse::<u32>())
+            && (spec.is_empty() || python_ok((a, b), &spec))
+        {
+            return Some(c.to_string());
+        }
+    }
+    None
+}
+
+fn has_manifest(p: &Path) -> bool {
+    ["package.json", "pyproject.toml", "Cargo.toml", "go.mod"]
+        .iter()
+        .any(|m| p.join(m).is_file())
+}
+
+/// `(dir name, server names)` when `root/<dir>/` holds two or more sub-projects.
+fn bundled_servers(root: &Path) -> Option<(String, Vec<String>)> {
+    for dir in ["servers", "packages", "src", "mcp", "apps", "examples"] {
+        let d = root.join(dir);
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        let mut names: Vec<String> = rd
+            .flatten()
+            .filter(|e| e.path().is_dir() && has_manifest(&e.path()))
+            .filter_map(|e| e.file_name().to_str().map(str::to_string))
+            .collect();
+        names.sort();
+        if names.len() >= 2 {
+            return Some((dir.to_string(), names));
+        }
+    }
+    None
 }
 
 /// Look at the project files, build, and return (runtime, command, cwd).
@@ -297,8 +407,9 @@ async fn detect_and_build(
             };
             return Ok(("python (uv)".into(), cmd, root.to_path_buf()));
         }
-        if on_path("python3") {
-            run("python3", &["-m", "venv", ".venv"], root, log).await?;
+        if let Some(python) = pick_python(&text) {
+            log.push(format!("using {python}"));
+            run(&python, &["-m", "venv", ".venv"], root, log).await?;
             let pip = root.join(".venv/bin/pip").display().to_string();
             run(&pip, &["install", "-q", "-e", "."], root, log).await?;
             let cmd = match &script {
@@ -311,7 +422,12 @@ async fn detect_and_build(
             };
             return Ok(("python (venv)".into(), cmd, root.to_path_buf()));
         }
-        return Err("this server needs Python: install uv (recommended) or python3".into());
+        return Err(format!(
+            "this server needs Python{}: install uv (`brew install uv` / https://docs.astral.sh/uv/) which fetches the right version automatically",
+            requires_python(&text)
+                .map(|r| format!(" {r}"))
+                .unwrap_or_default()
+        ));
     }
     // Rust
     if root.join("Cargo.toml").exists() {
@@ -399,6 +515,18 @@ pub fn config_file(paths: &Paths, directory: &Path, global: bool) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn python_constraints() {
+        assert!(python_ok((3, 12), ">=3.12, <3.13"));
+        assert!(!python_ok((3, 14), ">=3.12,<3.13"));
+        assert!(python_ok((3, 11), ">=3.10"));
+        assert!(python_ok((3, 12), "~=3.12"));
+        assert_eq!(
+            requires_python("[project]\nrequires-python = \">=3.10\"\n").as_deref(),
+            Some(">=3.10")
+        );
+    }
 
     #[test]
     fn names() {

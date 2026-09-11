@@ -312,7 +312,10 @@ impl Router {
             } => {
                 let u = l.models.entry(Self::key(model)).or_default();
                 u.failures += 1;
+                let too_large =
+                    lower.contains("too large") || lower.contains("reduce your message") || *status == 413;
                 let ms = match *status {
+                    _ if too_large => 3 * MINUTE, // fine for smaller requests
                     404 => 24 * 60 * MINUTE,      // model id gone
                     400 | 422 => 30 * MINUTE,     // rejected request shape (often our schema)
                     402 | 403 => 6 * 60 * MINUTE, // billing / not entitled

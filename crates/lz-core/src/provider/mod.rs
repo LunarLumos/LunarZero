@@ -98,6 +98,40 @@ fn default_base_url(npm: &str, provider_id: &str) -> Option<&'static str> {
     })
 }
 
+/// Models that are not general chat/coding models (image, audio, video,
+/// embeddings, computer-use, safety classifiers, …) are kept out of pickers
+/// and automatic defaults; they can still be named explicitly in config.
+pub fn is_chat_model(id: &str) -> bool {
+    let l = id.to_lowercase();
+    ![
+        "computer-use",
+        "embedding",
+        "embed-",
+        "-tts",
+        "tts-",
+        "whisper",
+        "transcri",
+        "image",
+        "imagen",
+        "veo",
+        "lyria",
+        "audio",
+        "-live",
+        "live-",
+        "robotics",
+        "guard",
+        "safety",
+        "moderation",
+        "rerank",
+        "ocr",
+        "sora",
+        "dall-e",
+        "realtime",
+    ]
+    .iter()
+    .any(|k| l.contains(k))
+}
+
 /// Map an npm package name to a wire protocol id we implement.
 pub fn protocol_for(npm: &str) -> Option<&'static str> {
     match npm {
@@ -461,8 +495,8 @@ impl Registry {
         self.connected().find_map(|p| {
             p.models
                 .values()
-                .find(|m| m.tool_call)
-                .or(p.models.values().next())
+                .find(|m| m.tool_call && is_chat_model(&m.id))
+                .or(p.models.values().find(|m| is_chat_model(&m.id)))
         })
     }
 
@@ -538,7 +572,7 @@ impl Registry {
                     models: p
                         .models
                         .values()
-                        .filter(|m| m.protocol.is_some())
+                        .filter(|m| m.protocol.is_some() && is_chat_model(&m.id))
                         .map(|m| ModelInfo {
                             id: m.id.clone(),
                             provider_id: m.provider_id.clone(),

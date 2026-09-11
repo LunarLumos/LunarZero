@@ -552,7 +552,10 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                     _ => 50,
                 })
                 .sum::<u64>()
-                / 4,
+                / 4
+                * 115
+                / 100
+                + 2_600, // + system prompt, project map and tool schemas
             user_text: msgs
                 .iter()
                 .rev()
