@@ -11,6 +11,9 @@ use serde_json::Value;
 const TTL: Duration = Duration::from_secs(300);
 const MAX_FILES: usize = 30_000;
 
+/// (files under the dir, second-level dir → files)
+type DirEntry = (usize, BTreeMap<String, usize>);
+
 #[derive(Default)]
 pub struct Cache {
     inner: std::sync::Mutex<Option<(Instant, String)>>,
@@ -70,7 +73,7 @@ pub fn build(worktree: &Path, max_chars: usize) -> String {
     let mut total = 0usize;
     let mut langs: BTreeMap<&'static str, usize> = BTreeMap::new();
     // top-level dir → (files, second-level dirs)
-    let mut dirs: BTreeMap<String, (usize, BTreeMap<String, usize>)> = BTreeMap::new();
+    let mut dirs: BTreeMap<String, DirEntry> = BTreeMap::new();
     let mut root_files: Vec<String> = Vec::new();
     let walker = ignore::WalkBuilder::new(worktree)
         .hidden(true)
@@ -111,7 +114,7 @@ pub fn build(worktree: &Path, max_chars: usize) -> String {
     let mut out = String::from("<project_map>\n");
     // languages
     let mut lv: Vec<(&str, usize)> = langs.iter().map(|(k, v)| (*k, *v)).collect();
-    lv.sort_by(|a, b| b.1.cmp(&a.1));
+    lv.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
     let langs_s: Vec<String> = lv.iter().take(6).map(|(k, v)| format!("{k} {v}")).collect();
     out.push_str(&format!(
         "files: {total}{}\n",
@@ -128,8 +131,8 @@ pub fn build(worktree: &Path, max_chars: usize) -> String {
     }
     // tree, two levels
     out.push_str("tree:\n");
-    let mut dv: Vec<(&String, &(usize, BTreeMap<String, usize>))> = dirs.iter().collect();
-    dv.sort_by(|a, b| b.1.0.cmp(&a.1.0));
+    let mut dv: Vec<(&String, &DirEntry)> = dirs.iter().collect();
+    dv.sort_by_key(|(_, (n, _))| std::cmp::Reverse(*n));
     for (d, (n, sub)) in dv.iter().take(18) {
         let mut subs: Vec<(&String, &usize)> = sub.iter().collect();
         subs.sort_by(|a, b| b.1.cmp(a.1));
