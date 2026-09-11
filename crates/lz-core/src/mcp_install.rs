@@ -168,10 +168,41 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
             parsed.subpath.clone().unwrap_or_default()
         ));
     }
+    // no manifest at the root: the README usually says how to run it
+    if parsed.subpath.is_none() && !has_manifest(&root) {
+        if let Some(pkg) = readme_package(&root) {
+            log.push(format!(
+                "README suggests `{pkg}`; using the package instead of building the repository"
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            let mut r = Box::pin(install(paths, &pkg, Some(name))).await?;
+            r.notes.append(&mut log);
+            return Ok(r);
+        }
+        // exactly one sub-project → use it; several → ask which
+        let subs = sub_projects(&root);
+        if subs.len() == 1 {
+            log.push(format!("using sub-folder {}", subs[0]));
+            let r = root.join(&subs[0]);
+            let (runtime, command, cwd) = detect_and_build(paths, &r, &mut log).await?;
+            let _ = std::fs::write(dir.join(".lz-mcp.json"), serde_json::json!({ "source": parsed.url, "git_ref": parsed.git_ref, "subpath": subs[0], "installed_at": now_ms() }).to_string());
+            return Ok(McpInstalled {
+                name,
+                command,
+                cwd: Some(cwd.display().to_string()),
+                runtime,
+                dir: Some(dir.display().to_string()),
+                notes: log,
+            });
+        }
+    }
     // a repository that bundles several servers: ask for one instead of
     // building a launcher that needs arguments
     if parsed.subpath.is_none()
-        && let Some((sub, servers)) = bundled_servers(&root)
+        && let Some((sub, servers)) = bundled_servers(&root).or_else(|| {
+            let subs = sub_projects(&root);
+            (subs.len() >= 2).then(|| (".".to_string(), subs))
+        })
     {
         let _ = std::fs::remove_dir_all(&dir);
         let base = src.trim_end_matches('/').trim_end_matches(".git");
@@ -182,10 +213,20 @@ pub async fn install(paths: &Paths, source: &str, name: Option<String>) -> Resul
         };
         let branch = parsed.git_ref.clone().unwrap_or_else(|| "main".into());
         return Err(format!(
-            "{} bundles {} servers under {sub}/: {}.\nInstall one at a time, e.g.: lz mcp install {base}/tree/{branch}/{sub}/{}",
+            "{} bundles {} servers{}: {}.\nInstall one at a time, e.g.: lz mcp install {base}/tree/{branch}/{}{}",
             parsed.url,
             servers.len(),
+            if sub == "." {
+                String::new()
+            } else {
+                format!(" under {sub}/")
+            },
             servers.join(", "),
+            if sub == "." {
+                String::new()
+            } else {
+                format!("{sub}/")
+            },
             servers[0]
         ));
     }
@@ -234,6 +275,76 @@ pub async fn ensure_uv(paths: &Paths, log: &mut Vec<String>) -> Result<String, S
     } else {
         Err("could not install uv; run `brew install uv` and retry".into())
     }
+}
+
+/// `npx @scope/pkg` / `uvx pkg` from the README → `npm:`/`pypi:` source.
+fn readme_package(root: &Path) -> Option<String> {
+    let text = ["README.md", "readme.md", "README.MD", "README"]
+        .iter()
+        .find_map(|n| std::fs::read_to_string(root.join(n)).ok())?;
+    for line in text.lines() {
+        for (prefix, scheme) in [
+            ("npx -y ", "npm:"),
+            ("npx ", "npm:"),
+            ("uvx ", "pypi:"),
+            ("pipx run ", "pypi:"),
+        ] {
+            let Some(i) = line.find(prefix) else { continue };
+            // must be at a word boundary (not e.g. "…/npx ")
+            if i > 0 && line.as_bytes()[i - 1].is_ascii_alphanumeric() {
+                continue;
+            }
+            {
+                let rest = &line[i + prefix.len()..];
+                let pkg = rest
+                    .split(|c: char| c.is_whitespace() || c == '`' || c == '"' || c == '\'' || c == ')')
+                    .next()
+                    .unwrap_or("");
+                let ok = !pkg.is_empty()
+                    && !pkg.starts_with('-')
+                    && !pkg.starts_with('<')
+                    && (pkg.starts_with('@') || pkg.contains("mcp") || pkg.contains("server"));
+                if ok {
+                    return Some(format!("{scheme}{pkg}"));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Relative paths (depth ≤ 2) of directories with a manifest, most likely servers first.
+fn sub_projects(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let walker = ignore::WalkBuilder::new(root)
+        .hidden(true)
+        .git_ignore(true)
+        .max_depth(Some(2))
+        .build();
+    for e in walker.flatten() {
+        let p = e.path();
+        if p == root || !p.is_dir() || !has_manifest(p) {
+            continue;
+        }
+        if p.components().any(|c| {
+            matches!(
+                c.as_os_str().to_str(),
+                Some("node_modules")
+                    | Some("shared")
+                    | Some("common")
+                    | Some("docs")
+                    | Some("examples")
+                    | Some("tests")
+            )
+        }) {
+            continue;
+        }
+        if let Ok(rel) = p.strip_prefix(root) {
+            out.push(rel.display().to_string());
+        }
+    }
+    out.sort_by_key(|p| (!p.contains("server") && !p.contains("mcp"), p.clone()));
+    out
 }
 
 fn has_manifest(p: &Path) -> bool {

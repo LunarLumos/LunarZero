@@ -407,6 +407,24 @@ impl McpManager {
         )
     }
 
+    /// Insert or replace one server's config without touching the others
+    /// (used by `install`, which then calls `connect_one`).
+    pub async fn register(&self, name: &str, cfg: McpServerConfig) {
+        let mut servers = self.servers.write().await;
+        servers.insert(
+            name.to_string(),
+            McpServer {
+                name: name.to_string(),
+                config: cfg,
+                status: McpStatus::Disabled,
+                client: None,
+                tools: Vec::new(),
+                prompts: Vec::new(),
+                instructions: None,
+            },
+        );
+    }
+
     pub async fn connect_one(
         &self,
         name: &str,

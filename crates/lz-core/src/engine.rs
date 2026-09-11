@@ -920,13 +920,24 @@ impl EngineApi for Engine {
         let path = crate::mcp_install::config_file(&self.paths, &self.directory, global);
         crate::mcp_install::register(&path, &installed).map_err(ApiError::invalid)?;
         self.reload().await.map_err(Self::err)?;
-        self.reload_mcp().await;
-        let status = match self.mcp.status().await.get(&installed.name) {
-            Some(McpStatus::Connected) => "connected".to_string(),
-            Some(McpStatus::Failed { error }) => format!("failed: {error}"),
-            Some(other) => format!("{other:?}").to_lowercase(),
-            None => "unknown".into(),
+        // start only this server — the others keep running untouched
+        let cfg = lz_schema::config::McpServerConfig::Local {
+            command: installed.command.clone(),
+            cwd: installed.cwd.clone(),
+            environment: None,
+            enabled: None,
+            timeout: None,
         };
+        self.mcp.register(&installed.name, cfg).await;
+        let status = match self
+            .mcp
+            .connect_one(&installed.name, &self.directory, &self.bus)
+            .await
+        {
+            Ok(()) => "connected".to_string(),
+            Err(e) => format!("failed: {e}"),
+        };
+        self.tools.set_extra(self.mcp.tools().await);
         let prefix = format!("{}_", crate::mcp::sanitize(&installed.name));
         let tools: Vec<String> = self
             .mcp

@@ -65,17 +65,21 @@ async fn list() -> anyhow::Result<i32> {
 async fn install(source: String, name: Option<String>, global: bool) -> anyhow::Result<i32> {
     use lz_schema::api::EngineApi;
     let directory = resolve_dir(&None)?;
+    // offline: no catalog fetch and no other MCP servers started just to install one
     let engine = lz_core::Engine::start(lz_core::EngineOptions {
         directory,
         auto_approve: false,
-        offline: false,
+        offline: true,
     })
     .await?;
     println!("installing MCP server from {source}…");
-    let r = engine
-        .install_mcp(&source, name, global)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))?;
+    let r = match engine.install_mcp(&source, name, global).await {
+        Ok(r) => r,
+        Err(e) => {
+            engine.shutdown().await;
+            return Err(anyhow::anyhow!(e));
+        }
+    };
     println!("registered `{}` in {}", r.name, r.config_path);
     println!("  runtime: {}\n  command: {}", r.runtime, r.command.join(" "));
     println!(
