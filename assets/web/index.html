@@ -196,7 +196,7 @@ const token = new URLSearchParams(location.search).get('token') || localStorage.
 if (token) { localStorage.setItem('lz-token', token); history.replaceState(null, '', location.pathname); }
 const api = async (path, opts = {}) => {
   const r = await fetch('/api' + path, { ...opts, headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token, ...(opts.headers || {}) } });
-  if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized — open the portal from the link shown in the terminal footer (or printed by <span class="mono">lz web</span>).</p></main>'; throw new Error('unauthorized'); }
+  if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized. Open <span class="mono">http://127.0.0.1:' + location.port + '</span> directly in this browser, or use the link from the terminal footer / <span class="mono">lz web</span>.</p></main>'; throw new Error('unauthorized'); }
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.statusText);
   return r.json();
 };

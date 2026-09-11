@@ -3141,13 +3141,8 @@ impl App {
         };
         let right = match &self.web_url {
             Some(url) => {
-                let full = area.width >= 120;
-                let shown = if full {
-                    url.clone()
-                } else {
-                    url.split("/?").next().unwrap_or(url).to_string()
-                };
-                Span::styled(format!("⌂ {shown}  /web "), theme.fg("accent"))
+                let shown = url.split("/?").next().unwrap_or(url).to_string();
+                Span::styled(format!("⌂ {shown}  (/web opens it) "), theme.fg("accent"))
             }
             None => Span::styled(format!("{dir} "), theme.muted()),
         };

@@ -139,6 +139,10 @@ struct TokenQuery {
     token: Option<String>,
 }
 
+/// Two ways in: the per-run token (scripts, curl, the `?token=` link), or a
+/// browser request that is genuinely same-origin to this loopback server.
+/// Browsers set `Host`, `Origin` and `Sec-Fetch-Site` themselves, so a page
+/// from another site cannot make its requests look same-origin to 127.0.0.1.
 async fn require_token(
     State(state): St,
     Query(q): Query<TokenQuery>,
@@ -146,16 +150,32 @@ async fn require_token(
     req: axum::extract::Request,
     next: middleware::Next,
 ) -> axum::response::Response {
-    let from_header = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(str::to_string);
-    let ok = from_header.or(q.token).is_some_and(|t| t == state.token);
-    if !ok {
+    let hdr = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    };
+    let from_header = hdr("authorization").and_then(|v| v.strip_prefix("Bearer ").map(str::to_string));
+    let token_ok = from_header.or(q.token).is_some_and(|t| t == state.token);
+    let same_origin = || {
+        let host = hdr("host").unwrap_or_default();
+        let host_ok =
+            host.starts_with("127.0.0.1:") || host.starts_with("localhost:") || host.starts_with("[::1]:");
+        let site_ok = matches!(
+            hdr("sec-fetch-site").as_deref(),
+            Some("same-origin") | Some("none")
+        );
+        let origin_ok = match hdr("origin") {
+            None => true,
+            Some(o) => o.strip_prefix("http://").is_some_and(|h| h == host),
+        };
+        host_ok && site_ok && origin_ok
+    };
+    if !token_ok && !same_origin() {
         return (
             StatusCode::UNAUTHORIZED,
-            Json(json!({ "message": "unauthorized" })),
+            Json(json!({ "message": "unauthorized: open the portal from the link in the terminal footer" })),
         )
             .into_response();
     }

@@ -89,7 +89,9 @@ engine, so what you do in one place shows up live in the other:
   portal port — saved to the global or project config and applied immediately; raw file editors
   for `lunarzero.json` and `tui.json` too.
 
-It binds to 127.0.0.1 only; every API call needs the per-run token from the link. `lz web` runs the
+It binds to 127.0.0.1 only. Opening `http://127.0.0.1:7411` in your own browser just works;
+requests that are not same-origin to the loopback host (other websites, scripts) need the per-run
+token from the link. `lz web` runs the
 portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ_WEB=0` turns it off.
 
 - `lunar/auto` picks per request: tool-heavy/agentic work, long prompts and "refactor/debug/…"
