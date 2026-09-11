@@ -244,14 +244,14 @@ impl Protocol for AnthropicMessages {
                     "thinking".into(),
                     json!({ "type": "enabled", "budget_tokens": budget }),
                 );
-            } else if let Some(effort) = opts.get("effort").and_then(Value::as_str) {
-                if effort != "none" {
-                    let budget = thinking_budget(effort, max_tokens);
-                    body.insert(
-                        "thinking".into(),
-                        json!({ "type": "enabled", "budget_tokens": budget }),
-                    );
-                }
+            } else if let Some(effort) = opts.get("effort").and_then(Value::as_str)
+                && effort != "none"
+            {
+                let budget = thinking_budget(effort, max_tokens);
+                body.insert(
+                    "thinking".into(),
+                    json!({ "type": "enabled", "budget_tokens": budget }),
+                );
             }
             // thinking requires the default temperature
             if body.contains_key("thinking") {
