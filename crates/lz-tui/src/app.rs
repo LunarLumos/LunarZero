@@ -141,6 +141,8 @@ pub struct App {
     tick: u64,
     attention: bool,
     booted: bool,
+    /// Enter was pressed before providers arrived; submit right after boot.
+    queued_submit: bool,
     scroll_speed: u16,
     pub area: Rect,
     /// Right-hand column used for notifications (sidebar when shown).
@@ -265,6 +267,7 @@ impl App {
             tick: 0,
             attention,
             booted: false,
+            queued_submit: false,
             scroll_speed: opts.tui.scroll_speed.unwrap_or(3).max(1),
             area: Rect::default(),
             notify_area: None,
@@ -626,6 +629,10 @@ impl App {
         }
         if let Some(p) = self.initial_prompt.take() {
             self.prompt.textarea.set_text(&p);
+            self.submit();
+        }
+        if std::mem::take(&mut self.queued_submit) && self.model.is_some() {
+            // the user hit enter before the engine had reported its providers
             self.submit();
         }
         if self.store.providers.providers.iter().all(|p| !p.connected) {
@@ -1485,6 +1492,12 @@ impl App {
                     return;
                 }
                 if self.model.is_none() {
+                    if !self.booted {
+                        // providers are still loading: send as soon as they arrive
+                        self.queued_submit = true;
+                        self.toast(ToastKind::Info, "Starting… your message will be sent in a moment");
+                        return;
+                    }
                     self.toast(ToastKind::Error, "No model selected — use /models or /connect");
                     return;
                 }

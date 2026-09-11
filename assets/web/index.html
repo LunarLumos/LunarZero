@@ -206,7 +206,7 @@
 <div id="toast"></div>
 <script>
 const token = new URLSearchParams(location.search).get('token') || localStorage.getItem('lz-token');
-if (token) { localStorage.setItem('lz-token', token); history.replaceState(null, '', location.pathname); }
+if (token) { localStorage.setItem('lz-token', token); history.replaceState(null, '', location.pathname + location.hash); }
 const api = async (path, opts = {}) => {
   const r = await fetch('/api' + path, { ...opts, headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token, ...(opts.headers || {}) } });
   if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized. Open <span class="mono">http://127.0.0.1:' + location.port + '</span> directly in this browser, or use the link from the terminal footer / <span class="mono">lz web</span>.</p></main>'; throw new Error('unauthorized'); }
@@ -238,7 +238,9 @@ function md(src) {
   closeList(); return out.join('');
 }
 document.querySelectorAll('nav a').forEach(a => a.onclick = () => showTab(a.dataset.tab));
-function showTab(tab) { document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x.dataset.tab === tab)); document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === tab)); load(tab); }
+function showTab(tab) { document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x.dataset.tab === tab)); document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === tab)); if (location.hash !== '#' + tab) history.replaceState(null, '', '#' + tab); load(tab); }
+// deep links: /#pool, /#keys, /#settings
+const TABS = ['chat', 'overview', 'keys', 'pool', 'settings'];
 
 // ───────── chat ─────────
 const chat = { session: null, messages: new Map(), parts: new Map(), order: [], busy: false, permissions: [], questions: [], routed: null, follow: true };
@@ -489,7 +491,7 @@ $('#cfg-save').onclick = async () => {
 
 const loaders = { chat: async () => { await loadMeta(); await loadSessions(); }, overview, keys, pool, settings };
 async function load(tab) { try { await loaders[tab](); } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); } }
-(async () => { try { const s = await api('/status'); $('#version').textContent = 'v' + s.version; $('#dir').textContent = s.directory; } catch {} connectEvents(); load('chat'); })();
+(async () => { try { const s = await api('/status'); $('#version').textContent = 'v' + s.version; $('#dir').textContent = s.directory; } catch {} connectEvents(); const t = location.hash.slice(1); showTab(TABS.includes(t) ? t : 'chat'); })();
 setInterval(() => { const t = document.querySelector('nav a.active').dataset.tab; if (t === 'overview' || t === 'pool') load(t); }, 6000);
 </script>
 </body>

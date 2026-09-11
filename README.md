@@ -1,60 +1,153 @@
-# LunarZero (`lz`)
+<p align="center">
+  <img src="assets/media/banner.png" alt="LunarZero" width="900">
+</p>
 
-A fast, single-binary terminal coding agent written in Rust: its own agent loop, prompts,
-themes, and a router that stacks the free tiers of a dozen model providers into one
-`lunar/auto` model with instant failover.
+<p align="center">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-7aa2ff?style=flat-square&labelColor=141b2e"></a>
+  <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-e8ecf5?style=flat-square&logo=rust&logoColor=e8ecf5&labelColor=141b2e">
+  <img alt="macOS · Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux-single%20binary-3fdc7a?style=flat-square&labelColor=141b2e">
+  <img alt="free models" src="https://img.shields.io/badge/free%20models-278%20%2F%2013%20providers-ffd866?style=flat-square&labelColor=141b2e">
+  <a href="https://github.com/LunarLumos/LunarZero/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/LunarLumos/LunarZero?style=flat-square&color=7aa2ff&labelColor=141b2e"></a>
+</p>
 
-- **One static binary**, no Bun/Node, no external `rg`, no worker-thread server.
-- **Simple config**: `lunarzero.json[c]` in the project (walks up to the git root) and
-  `~/.config/lunarzero/`, `.lunarzero/` directories for agents, commands, skills and themes,
-  `AGENTS.md` instructions, `LZ_*` environment variables.
-- **Agent core**: multi-step tool loop, concurrent tool calls, retries, context compaction,
-  snapshots/undo, subagents, permissions (`allow`/`ask`/`deny` rules, last match wins).
-- **Tools**: `bash`, `read`, `write`, `edit` (9 fuzzy replacers), `apply_patch`, `glob`, `grep`
-  (ripgrep as a library), `task`, `webfetch`, `todowrite`, `question`, `skill`, plus MCP tools.
-- **Integrations**: MCP servers (local stdio + remote streamable HTTP), LSP diagnostics after
-  edits, skills (`SKILL.md`), markdown agents and slash commands.
-- **TUI**: ratatui UI with streaming markdown, syntax highlighting, diffs, tool cards,
-  permission/question panels, sidebar with notifications kept out of the transcript, fuzzy
-  dialogs, 18 palette themes incl. `lunar` (default) and `hacker` (green/black/red), dark/light
-  variants (+ the terminal's own `system` theme), a `ctrl+x` leader keymap, `@file` /
-  `/command` autocomplete, `!shell` mode, paste atoms, `$EDITOR` compose.
-- **Token-frugal**: ~2k tokens of fixed overhead per request (compact system prompt and tool
-  schemas), reasoning is never replayed into later requests, stale tool output is pruned from
-  the context early, and a ~80-token **project map** (languages, layout, build/test commands,
-  entry points) rides in the prompt so the model orients itself without exploratory tool calls
-  — each of which would re-send the whole context.
-- **Providers**: any OpenAI-compatible chat API (OpenAI, OpenRouter, Groq, DeepSeek, Ollama,
-  LM Studio, …) via the built-in model catalog or a custom `provider` entry.
+<p align="center">
+  <b>LunarZero</b> (<code>lz</code>) is a terminal coding agent written in Rust.<br>
+  It plans, edits, runs your tests and ships — on a pool of <b>free-tier models</b> that fail over instantly,<br>
+  from <b>one 20 MB binary</b> that starts in milliseconds. No runtime, no cloud, no bill.
+</p>
+
+<p align="center">
+  <img src="assets/media/session.png" alt="lz working through a plan: todo list, diff, tests, summary — with the routed model and plan in the sidebar" width="900">
+</p>
+
+---
+
+## Why LunarZero
+
+| | |
+|---|---|
+| 🌙 **Free by design** | A built-in catalog of **278 free models across 13 providers**. Add keys for as many as you like; `lunar/auto` picks the best one per request and moves on the instant one hits a limit. |
+| ⚡ **One static binary** | Rust, ~20 MB, ~7 ms startup, ~36 MB RAM. No Node, no Python, no `rg` to download. |
+| 🧠 **Prompt-aware** | Model, skills and MCP servers are chosen from the prompt itself — chat goes to the fastest model, refactors to the strongest, and only the relevant skills ride along. |
+| 🪙 **Token-frugal** | ~2k tokens of fixed overhead per request, stale tool output pruned early, old file writes stubbed, a ~80-token project map so the model doesn't need to explore. |
+| 🔁 **Finishes the job** | Failover before backoff, resume from the last completed step, plans the model can't abandon halfway, loop detection, hard-quota awareness. |
+| 🖥️ **Terminal + browser** | A fast TUI with streaming markdown, diffs and a live plan sidebar — and a local web portal on the same engine for keys, quotas, settings and chat. |
 
 ## Install
 
 ```sh
-git clone <this repo> && cd LunarZero
-cargo install --path crates/lz-cli        # installs `lz` and `lunarzero`
+cargo install --git https://github.com/LunarLumos/LunarZero lz-cli
 ```
 
-Requires a stable Rust toolchain (see `rust-toolchain.toml`).
+That installs `lz` (and `lunarzero`). Needs a stable Rust toolchain — `curl https://sh.rustup.rs -sSf | sh` if you don't have one.
 
-## Quick start
+## First run
 
-LunarZero ships with no keys and no cloud — you connect it to a model once:
+<p align="center">
+  <img src="assets/media/home.png" alt="first run: connect a free provider" width="820">
+</p>
+
+LunarZero ships with no keys and no cloud. Connect a model once, any way you like:
 
 ```sh
-lz setup                              # guided: pick a free provider, get a key, verify it
-# or any of: export GROQ_API_KEY=… · lz auth login groq · /connect in the TUI · the web portal
-# or run Ollama / LM Studio locally — detected automatically
-lz                                    # open the TUI in the current project
-lz run "explain the build system"     # one-shot, prints the answer
-lz run --format json "list the tests" # NDJSON event stream
-lz -c                                 # continue the most recent session
-lz --model openrouter/anthropic/claude-sonnet-4 --agent plan
+lz setup            # guided: pick a free provider, get a key, verify it
+lz auth login groq  # or paste a key directly (Groq, Cerebras, Google AI Studio, OpenRouter, …)
+lz                  # or type /connect in the TUI, or use the portal's API-keys tab
 ```
 
-Local models:
+Running Ollama or LM Studio? It's detected automatically. Then:
+
+```sh
+lz                                  # open the TUI in the current project
+lz run "explain the build system"   # one-shot answer, no UI
+lz -c                               # continue the last session
+lz --model lunar/auto               # route across every free key you added
+```
+
+## The free pool
+
+<p align="center">
+  <img src="assets/media/models.png" alt="model picker with pool providers and Lunar auto" width="820">
+</p>
+
+Every pool model carries a computed **quality** score (size, what the same model costs on paid providers, recency, reasoning, context) and a **speed** score, plus the provider's published free-tier caps. `lunar/auto` classifies each request — chat · coding · reasoning · long-context — and routes it:
+
+- **Instant failover** — a 429/5xx/timeout/bad key before any output switches to the next model at once, no backoff. The failed one cools down (rate windows, daily quotas until UTC midnight, bad keys for an hour).
+- **Learned speed** — time-to-first-token and tokens/s are measured per model and blended into the ranking.
+- **Sticky sessions** — a session stays on its model for 30 minutes unless a clearly better one frees up.
+- **Waits, never dies** — when everything is rate limited it waits for the soonest window and tells you why.
+- **Rescue** — a paid or local model that fails hard is rescued by the pool instead of erroring.
+
+```sh
+lz pool setup    # every pool provider, signup URL, env var, and which ones have keys
+lz pool status   # per-model RPM/RPD/TPM/TPD usage, measured latency, cooldowns
+```
+
+## Web portal
+
+<p align="center">
+  <img src="assets/media/portal.png" alt="the local portal's Pool tab: quota bars, latency, cooldowns" width="900">
+</p>
+
+Every `lz` session also starts a local portal — the link is in the footer, `/web` opens it. It shares the running engine, so what you do in one place shows up live in the other:
+
+- **Chat** — send prompts and plans from the browser, watch them stream, answer permissions and questions, stop a run.
+- **API keys** — add or remove provider keys (masked) with signup links for the free tiers.
+- **Pool** — quota bars, latency and cooldowns per model; reset cooldowns.
+- **Settings** — model, agent, pool strategy, permissions, theme, port — applied immediately.
+
+Binds to `127.0.0.1` only. Your own browser just works; anything that isn't same-origin needs the per-run token. `lz web` runs it without the TUI.
+
+## Skills & MCP servers
+
+```sh
+lz skill install owner/repo                                 # or a GitHub link to a sub-folder
+lz mcp install https://github.com/org/some-mcp-server       # clones, builds (npm / uv / cargo / go), connects
+lz mcp install npm:@scope/server   ·   lz mcp install pypi:some-server
+lz recommend                                                # curated servers & skills by alias
+```
+
+…or just tell the agent *"install the skill at &lt;link&gt;"* — it runs the installer and the skill is live on the next turn, no restart. Ten skills ship inside the binary (`debugging`, `testing`, `git-workflow`, `code-review`, `refactoring`, `performance`, `security-review`, `codebase-map`, `api-design`, `release`) and load only when the prompt calls for them. MCP tools are sent to the model only when the prompt relates to them, so a dozen servers cost nothing until used.
+
+## It finishes what it starts
+
+- **Plans in the sidebar** — for anything with three or more steps the agent writes a plan you can watch; if it stops with items open and hands them back as "next steps", it is sent straight back to them.
+- **Resume, don't restart** — a turn that stopped (quota, error, `esc`) continues from its last completed step with `/retry` or by typing `continue`, keeping every file already written.
+- **Loop guard** — a model repeating itself is cut off and the request moves to the next model.
+- **Quiet failures** — errors are one-line toasts in the sidebar, never a wall of JSON over your work.
+- **Long output tamed** — repeated warning lines are collapsed; installs, builds and docker get a 10-minute timeout automatically.
+
+## Themes
+
+<p align="center">
+  <img src="assets/media/hacker.png" alt="the hacker theme: green, black and red" width="900">
+</p>
+
+18 palettes, each with dark and light variants, plus the terminal's own colors as `system`. `lunar` is the default; `hacker` is green/black/red. `/themes` previews live.
+
+## Commands
+
+| Command | |
+|---|---|
+| `lz [project] [-m model] [-c] [-s id] [--agent name] [--auto]` | TUI |
+| `lz run [message..] [--format text\|json] [-c] [--model] [--auto]` | non-interactive, NDJSON with `--format json` |
+| `lz setup` · `lz auth list\|login\|logout` | connect providers |
+| `lz pool setup\|list\|status` | the free pool |
+| `lz models [provider]` · `lz agent list\|create` | models, agents |
+| `lz skill list\|install\|remove\|update` · `lz mcp list\|install\|add` · `lz recommend` | skills & MCP |
+| `lz web [--port 7411]` | portal on its own |
+| `lz session list\|delete` · `lz export` · `lz import` | sessions |
+| `lz config show\|path\|schema` · `lz completion <shell>` · `lz upgrade` | misc |
+
+**TUI keys** — `enter` send · `shift+enter` newline · `esc` interrupt · `ctrl+p` palette · `tab` cycle agent · `f2` recent model · `ctrl+x` then `n` new · `l` sessions · `m` models · `a` agents · `t` themes · `b` sidebar · `u` undo · `r` redo · `e` editor.
+
+**Slash commands** — `/new /sessions /models /agents /themes /connect /skills /install /retry /web /status /compact /undo /redo /fork /rename /export /init /help` plus your own `command/*.md`, skills and MCP prompts.
+
+## Configuration
+
+`lunarzero.json[c]` in the project (walks up to the git root) and `~/.config/lunarzero/`; `.lunarzero/` holds agents, commands, skills and themes; `AGENTS.md` carries instructions. Any OpenAI-compatible endpoint works as a provider:
 
 ```jsonc
-// lunarzero.json
 {
   "provider": {
     "ollama": {
@@ -63,156 +156,35 @@ Local models:
       "models": { "llama3.1": { "name": "Llama 3.1" } }
     }
   },
-  "model": "ollama/llama3.1"
+  "model": "lunar/auto",
+  "pool": { "strategy": "auto", "sticky_minutes": 30, "exclude": ["sambanova/*"] },
+  "smart": { "skills": true, "mcp": true, "mcp_always": ["github"] },
+  "permission": { "bash": { "git push *": "ask" } }
 }
 ```
 
-## Prompt-aware selection
+Data lives in `~/.local/share/lunarzero` (sessions, auth, snapshots), `~/.config/lunarzero` (config, themes), `~/.local/state/lunarzero` (quota ledger, TUI state).
 
-Every request is shaped by the prompt, with a deterministic keyword scorer (no extra model call):
-
-- **Model** — `lunar/auto` classifies the task (chat · coding · reasoning · long-context): chat goes
-  to the fastest model, coding to the best tool-capable one, "why/analyze/design/compare" prompts
-  nudge toward thinking models, big prompts toward big context windows. The footer shows the pick
-  and the reason (`smart for reasoning`).
-- **Skills** — only the skills relevant to the prompt are described (the rest by name), and a
-  clear match is attached in full so the model doesn't spend a tool call loading it
-  ("tests are failing after my change" → `debugging` attached).
-- **MCP servers** — a server's tools are sent only when the prompt mentions it, relates to its
-  tools, or it was already used in the session; others are listed in one line so the model can
-  ask for them. `smart.mcp_always` pins servers you always want.
-
-Config: `smart.{skills, attach_skill, mcp, mcp_always}`; hard quota errors (`limit: 0`, billing)
-are never retried, and a non-pool model that fails hard is rescued by the pool (`pool.rescue`).
-
-## Free-tier pool (`lunar/auto`)
-
-LunarZero has its own catalog of ~280 free models across 13 providers
-([assets/pool.json](assets/pool.json), generated by [scripts/build_pool.py](scripts/build_pool.py)):
-membership follows each provider's free-tier rules over the model catalog, every model gets a
-computed **quality** score (parameter count, the price the same model fetches on paid providers,
-recency, reasoning, context) and a **speed** score (provider prior + active parameters), and the
-published free-tier caps are attached. Add keys for as many providers as you like and use the
-virtual `lunar` provider:
-
-```sh
-lz pool setup            # every pool provider, signup URL, env var, and which have keys
-lz auth login groq       # or: export GROQ_API_KEY=... (Groq, Cerebras, Google AI Studio,
-lz auth login cerebras   #     OpenRouter, Mistral, NVIDIA, Hugging Face, GitHub Models, …)
-lz --model lunar/auto    # route every request across your free keys
-lz pool status           # per-model RPM/RPD/TPM/TPD usage, measured latency, cooldowns
-```
-
-## Web portal
-
-Every `lz` session also starts a local web portal — the link is in the terminal footer
-(`⌂ http://127.0.0.1:7411/?token=…`), and `/web` opens it in the browser. It shares the running
-engine, so what you do in one place shows up live in the other:
-
-- **Chat** — send prompts and plans from the browser, watch the answer stream, allow/reject
-  permission requests, answer the agent's questions, stop a run, pick model and agent per message.
-- **API keys** — add or remove provider keys (masked), with signup links for the free tiers.
-- **Pool** — quota bars, measured latency and cooldowns per free model; reset cooldowns.
-- **Settings** — default model/agent, pool strategy, permissions, LSP/snapshots/compaction, theme,
-  portal port — saved to the global or project config and applied immediately; raw file editors
-  for `lunarzero.json` and `tui.json` too.
-
-It binds to 127.0.0.1 only. Opening `http://127.0.0.1:7411` in your own browser just works;
-requests that are not same-origin to the loopback host (other websites, scripts) need the per-run
-token from the link. `lz web` runs the
-portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ_WEB=0` turns it off.
-
-- `lunar/auto` picks per request: tool-heavy/agentic work, long prompts and "refactor/debug/…"
-  requests go to the highest-quality model that is under its limits, short chat goes to the
-  fastest; `lunar/smart` and `lunar/fast` force one. Sessions stick to a model for 30 minutes.
-- Speed is learned, not just assumed: time-to-first-token and tokens/s are measured per model
-  and blended into the ranking.
-- **Resume, don't restart**: a turn that stopped (error, quota, `esc`) continues from its last
-  completed step with `/retry` (or just typing `retry`/`continue`), keeping the plan and every file
-  already written; the model you have selected now is used.
-- **Plans get finished**: when the model stops with items of its own plan still open and hands
-  them back as "next steps" (or "I'll wait here"), it is sent straight back to them — at most
-  twice per turn, and never when it actually asked you a question. A short follow-up
-  (`continue`, `run the tests`, `fix it`) re-activates an earlier plan the same way.
-- **Immediate failover**: a 429/5xx/timeout/bad key before any output streamed switches to the
-  next model at once (no backoff); the failed one cools down (rate windows, daily quotas until
-  UTC midnight, bad keys for an hour) and the TUI footer shows `→ provider/model`.
-- Picking a pool model explicitly (say `groq/llama-3.3-70b-versatile`) still fails over inside
-  the pool when it is rate limited; `"pool": { "fallback": false }` disables that.
-- Usage lives in `~/.local/state/lunarzero/quota.json`, so daily caps survive restarts.
-  Config: `pool.{enabled, strategy, fallback, rescue, sticky_minutes, exclude, include, paid}` —
-  pool models are priced at $0 (free tiers); `"paid": true` charges catalog list prices instead.
-
-## Commands
-
-| Command | Description |
-|---|---|
-| `lz [project] [-m model] [-c] [-s id] [--fork] [--prompt text] [--agent name] [--auto]` | TUI |
-| `lz run [message..] [--format text\|json] [--file f] [-c] [-s id] [--agent] [--model] [--command name] [--auto]` | non-interactive |
-| `lz auth list\|login\|logout` | provider API keys (`~/.local/share/lunarzero/auth.json`) |
-| `lz models [provider] [--refresh]` | list models |
-| `lz agent list\|create` | agents (built-in + `.lunarzero/agent/*.md`) |
-| `lz skill list\|install <src> [--project]\|remove\|update` | skills; `<src>` = `owner/repo`, a GitHub link (sub-folder ok) or git URL |
-| `lz mcp list\|install <src> [--name n] [--global]\|add …` | MCP servers; `install` takes `owner/repo`, a GitHub link (sub-folder ok), `npm:<pkg>` or `pypi:<pkg>`, builds it and connects |
-| `lz pool setup\|list\|status` | free-tier pool: providers & keys, models & limits, usage |
-| `lz web [--port 7411] [--no-open]` | run the web portal on its own (it also starts with the TUI) |
-| `lz session list\|delete`, `lz export`, `lz import` | sessions |
-| `lz config show\|path\|schema` | merged config, paths, JSON schema |
-| `lz completion <shell>`, `lz upgrade [--check]` | misc |
-
-## TUI keys (defaults, override in `tui.json`)
-
-`enter` send · `shift+enter`/`ctrl+j` newline · `esc` interrupt · `ctrl+c` clear/exit ·
-`ctrl+p` command palette · `tab` cycle agent · `f2` recent model · `ctrl+t` variant ·
-`pageup`/`pagedown` scroll · `ctrl+x` then: `n` new · `l` sessions · `m` models · `a` agents ·
-`t` themes · `b` sidebar · `c` compact · `u` undo · `r` redo · `e` editor · `x` export · `?` help.
-
-Slash commands: `/new /sessions /models /agents /variants /mcps /themes /connect /skills /install
-/retry /web /help /status /compact /undo /redo /fork /rename /export /copy /editor /init /details /thinking /exit`
-plus your `command/*.md`, skills and MCP prompts.
-
-Skills (`SKILL.md` folders) are found in `.lunarzero/skills`, `~/.config/lunarzero/skills`, `.claude/skills`,
-`.agents/skills` and `skills.paths`. Install from GitHub with `lz skill install owner/repo` (or a link to
-a sub-folder), `/install …` in the TUI, the portal's Settings tab, or just tell the agent
-"install the skill at <link>" — it runs the installer for you. `skills.urls` in config auto-installs on start.
-
-Ten skills ship inside the binary and load on demand — `debugging`, `testing`, `git-workflow`,
-`code-review`, `refactoring`, `performance`, `security-review`, `codebase-map`, `api-design`,
-`release` (about 170 tokens for the whole list; `"skills": {"builtin": false}` turns them off).
-`lz recommend` shows curated MCP servers and skills installable by alias:
-`lz mcp install github`, `lz mcp install playwright`, `lz skill install pdf`, ….
-
-MCP servers work the same way: `lz mcp install https://github.com/modelcontextprotocol/servers/tree/main/src/memory`
-clones, runs `npm install`/`build` (or `uv`/venv for Python, `cargo`/`go build`), finds the entry point,
-writes the `mcp.<name>` config entry and connects it; `npm:<pkg>` / `pypi:<pkg>` register `npx -y` / `uvx`
-launchers without cloning. Also `/install --mcp <src>` in the TUI, the portal's Settings tab, or ask the agent.
-
-## Layout
+## Under the hood
 
 ```
-crates/lz-schema   types shared by engine and clients (ids, session/message/part, events, config, EngineApi)
-crates/lz-core     the engine: config, storage (SQLite), providers, tools, permissions, session runner, MCP, LSP
-crates/lz-tui      the terminal UI (depends only on lz-schema + EngineApi)
-crates/lz-web      the local web portal (axum + one embedded page)
+crates/lz-schema   shared types: ids, session/message/part, events, config, the EngineApi trait
+crates/lz-core     the engine: config, SQLite storage, providers & router, tools, permissions, runner, MCP, LSP
+crates/lz-tui      the terminal UI (talks to the engine only through EngineApi)
+crates/lz-web      the local portal (axum + one embedded page)
 crates/lz-cli      the `lz` binary
-assets/            prompts, palettes, pool catalog, embedded model catalog snapshot, dashboard page
+assets/            prompts, palettes, pool catalog, model catalog snapshot, built-in skills, portal page
 ```
-
-Data lives in `~/.local/share/lunarzero` (sessions DB, auth, snapshots, tool output),
-`~/.config/lunarzero` (config, themes, AGENTS.md), `~/.cache/lunarzero` (models catalog),
-`~/.local/state/lunarzero` (TUI state). `LZ_*` env vars override paths; `OPENCODE_*` are honored.
-
-## Development
 
 ```sh
-cargo test --workspace
-cargo clippy --workspace --all-targets
-cargo build --release      # lto=fat, single binary at target/release/lz
+cargo test --workspace && cargo clippy --workspace --all-targets
+cargo build --release    # lto=fat → target/release/lz
 ```
 
-## Status / not in v1
+## Roadmap
 
-Remote/attach mode, Anthropic/Gemini native wire protocols (OpenAI-compatible endpoints only
-for now), remote MCP OAuth, formatters after edit, tree-sitter bash scanning.
+Native Anthropic/Gemini wire protocols, remote MCP OAuth, attach/remote mode, formatters after edit, Windows.
 
-MIT licensed — see `LICENSE`; `NOTICE.md` lists the embedded data source.
+---
+
+<p align="center">MIT — see <a href="LICENSE">LICENSE</a> · <a href="NOTICE.md">NOTICE</a></p>
