@@ -1,0 +1,1 @@
+Read a file (or list a directory) from the local filesystem. Returns numbered lines; use `offset` (1-based) and `limit` to page through large files. Images and PDFs are returned as attachments. Prefer this over `cat`/`head`/`tail`.

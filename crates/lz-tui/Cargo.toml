@@ -1,0 +1,35 @@
+[package]
+name = "lz-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lz-schema.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+ropey.workspace = true
+unicode-width.workspace = true
+unicode-segmentation.workspace = true
+textwrap.workspace = true
+pulldown-cmark.workspace = true
+syntect.workspace = true
+similar.workspace = true
+nucleo-matcher.workspace = true
+arboard.workspace = true
+etcetera.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+xxhash-rust.workspace = true
+jiff.workspace = true
+libc.workspace = true
+base64 = "0.22"
+infer.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

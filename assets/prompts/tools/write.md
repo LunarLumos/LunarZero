@@ -1,0 +1,1 @@
+Create or overwrite a file with the given content. Read an existing file before replacing it, and prefer `edit` for changes to files that already exist. Do not create documentation or extra files that were not requested.

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LunarZero</title>
+<style>
+  :root { --bg:#0b1020; --surface:#141b2e; --el:#1c2440; --fg:#d7dce8; --muted:#7c8499; --primary:#7aa2ff; --secondary:#c792ea; --accent:#5fd7c4; --red:#ff6b7a; --green:#5fd78a; --yellow:#f0c674; --border:#26304a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+  header { display:flex; align-items:center; gap:16px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:0; z-index:2; }
+  header h1 { font-size:16px; margin:0; letter-spacing:.08em; color:var(--primary); }
+  header h1 span { color:var(--muted); font-weight:400; margin-left:8px; letter-spacing:0; }
+  nav a { color:var(--muted); text-decoration:none; padding:6px 10px; border-radius:6px; cursor:pointer; }
+  nav a.active, nav a:hover { color:var(--fg); background:var(--el); }
+  main { max-width:1100px; margin:0 auto; padding:20px; }
+  section { display:none; } section.active { display:block; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:20px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .card .v { font-size:22px; font-weight:600; margin-top:4px; }
+  .card .s { color:var(--muted); font-size:12px; }
+  table { width:100%; border-collapse:collapse; background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  tr:last-child td { border-bottom:0; }
+  td.mono, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:8px; background:var(--muted); }
+  .dot.on { background:var(--green); } .dot.cool { background:var(--yellow); } .dot.off { background:#3a4360; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:999px; background:var(--el); color:var(--muted); font-size:11px; margin-left:6px; }
+  .tag.pool { color:var(--accent); }
+  button { background:var(--el); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:5px 10px; cursor:pointer; font:inherit; font-size:12.5px; }
+  button:hover { border-color:var(--primary); } button.primary { background:var(--primary); color:#0b1020; border-color:var(--primary); font-weight:600; }
+  button.danger:hover { border-color:var(--red); color:var(--red); }
+  input[type=password], input[type=text], select { background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:6px 8px; font:inherit; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .bar { height:6px; background:var(--el); border-radius:3px; overflow:hidden; min-width:80px; }
+  .bar i { display:block; height:100%; background:var(--accent); }
+  .bar i.warn { background:var(--yellow); } .bar i.full { background:var(--red); }
+  .muted { color:var(--muted); } .err { color:var(--red); } .ok { color:var(--green); }
+  #toast { position:fixed; right:20px; bottom:20px; background:var(--surface); border:1px solid var(--border); padding:10px 14px; border-radius:8px; display:none; }
+  a.link { color:var(--primary); }
+  details summary { cursor:pointer; color:var(--muted); }
+  pre { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px; overflow:auto; font-size:12.5px; }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin:8px 0 12px; gap:8px; flex-wrap:wrap; }
+  h2 { font-size:15px; margin:18px 0 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LUNARZERO <span id="version"></span></h1>
+  <nav>
+    <a data-tab="overview" class="active">Overview</a>
+    <a data-tab="keys">API keys</a>
+    <a data-tab="pool">Pool</a>
+    <a data-tab="sessions">Sessions</a>
+    <a data-tab="config">Config</a>
+  </nav>
+  <span class="muted" id="dir" style="margin-left:auto"></span>
+</header>
+<main>
+  <section id="overview" class="active">
+    <div class="cards" id="ov-cards"></div>
+    <h2>Providers</h2>
+    <table><thead><tr><th>Provider</th><th>Status</th><th>Models</th><th>Source</th></tr></thead><tbody id="ov-providers"></tbody></table>
+  </section>
+
+  <section id="keys">
+    <p class="muted">Keys are stored in <span class="mono" id="auth-path"></span> (mode 0600). Environment variables and <span class="mono">provider</span> config entries also connect a provider. Pool providers have free tiers — get a key from the signup link.</p>
+    <div class="toolbar"><input type="text" id="key-filter" placeholder="filter providers…"><label class="muted"><input type="checkbox" id="key-all"> show all providers</label></div>
+    <table><thead><tr><th>Provider</th><th>Status</th><th>Env</th><th>Key</th><th></th></tr></thead><tbody id="keys-body"></tbody></table>
+  </section>
+
+  <section id="pool">
+    <div class="cards" id="pool-cards"></div>
+    <div class="toolbar">
+      <div class="row"><span class="muted">Models with a key are routable by <span class="mono">lunar/auto</span>. Cooldowns clear automatically; reset if a provider is back early.</span></div>
+      <div class="row"><label class="muted"><input type="checkbox" id="pool-all"> show unconnected</label><button id="pool-reset" class="danger">Reset cooldowns</button></div>
+    </div>
+    <table><thead><tr><th>Model</th><th>Quality</th><th>Speed</th><th>RPM</th><th>RPD</th><th>TPM</th><th>TPD</th><th>Latency</th><th>State</th></tr></thead><tbody id="pool-body"></tbody></table>
+  </section>
+
+  <section id="sessions">
+    <table><thead><tr><th>Title</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Updated</th><th></th></tr></thead><tbody id="sess-body"></tbody></table>
+  </section>
+
+  <section id="config">
+    <p class="muted">Merged configuration (global → project → env). Edit <span class="mono">lunarzero.json</span> in the project or <span class="mono" id="cfg-path"></span>; changes apply on the next start.</p>
+    <pre id="cfg"></pre>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const token = new URLSearchParams(location.search).get('token') || localStorage.getItem('lz-token');
+if (token) { localStorage.setItem('lz-token', token); history.replaceState(null, '', location.pathname); }
+const api = async (path, opts = {}) => {
+  const r = await fetch('/api' + path, { ...opts, headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + token, ...(opts.headers || {}) } });
+  if (r.status === 401) { document.body.innerHTML = '<main><p class="err">Not authorized — open the dashboard from the URL printed by <span class="mono">lz web</span>.</p></main>'; throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message || r.statusText);
+  return r.json();
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(Math.round(n));
+const ago = ms => { const d = (Date.now()-ms)/1000; return d < 60 ? 'just now' : d < 3600 ? Math.floor(d/60)+'m ago' : d < 86400 ? Math.floor(d/3600)+'h ago' : Math.floor(d/86400)+'d ago'; };
+let toastT; const toast = (m, err) => { const t = $('#toast'); t.textContent = m; t.style.borderColor = err ? 'var(--red)' : 'var(--green)'; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => t.style.display = 'none', 3500); };
+document.querySelectorAll('nav a').forEach(a => a.onclick = () => { document.querySelectorAll('nav a').forEach(x => x.classList.toggle('active', x === a)); document.querySelectorAll('section').forEach(s => s.classList.toggle('active', s.id === a.dataset.tab)); load(a.dataset.tab); });
+
+const bar = (used, limit) => { if (!limit) return `<span class="muted">${used}</span>`; const p = Math.min(100, used/limit*100); return `<div class="row"><div class="bar"><i class="${p>90?'full':p>60?'warn':''}" style="width:${p}%"></i></div><span class="muted">${used}/${limit}</span></div>`; };
+
+async function overview() {
+  const s = await api('/status');
+  $('#version').textContent = 'v' + s.version; $('#dir').textContent = s.directory;
+  const pool = s.pool;
+  $('#ov-cards').innerHTML = [
+    ['Connected providers', s.providers.filter(p => p.connected).length, `of ${s.providers.length} known`],
+    ['Pool models ready', pool.ready, `${pool.cooling} cooling · ${pool.total} total`],
+    ['Requests today', pool.requests_today, 'across pool models'],
+    ['Tokens today', fmt(pool.tokens_today), 'pool usage'],
+    ['Sessions', s.sessions, `${s.sessions_today} today`],
+    ['Default model', s.default_model || '—', s.default_model && s.default_model.startsWith('lunar/') ? 'routed per request' : ''],
+  ].map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
+  $('#ov-providers').innerHTML = s.providers.filter(p => p.connected).map(p => `<tr><td><span class="dot on"></span>${esc(p.name)}<span class="mono muted"> ${esc(p.id)}</span>${p.pool?'<span class="tag pool">free pool</span>':''}</td><td class="ok">connected</td><td>${p.models}</td><td class="muted">${esc(p.source)}</td></tr>`).join('') || '<tr><td colspan=4 class="muted">No provider connected yet — add a key on the API keys tab.</td></tr>';
+}
+
+async function keys() {
+  const s = await api('/providers');
+  $('#auth-path').textContent = s.auth_path; 
+  const all = $('#key-all').checked, f = $('#key-filter').value.toLowerCase();
+  const rows = s.providers.filter(p => (all || p.pool || p.connected) && (!f || (p.id + ' ' + p.name).toLowerCase().includes(f)));
+  $('#keys-body').innerHTML = rows.map(p => `<tr>
+    <td><span class="dot ${p.connected?'on':'off'}"></span>${esc(p.name)}<span class="mono muted"> ${esc(p.id)}</span>${p.pool?'<span class="tag pool">free pool</span>':''}${p.signup?` <a class="link" href="${esc(p.signup)}" target="_blank" rel="noopener">get key ↗</a>`:''}</td>
+    <td>${p.connected ? `<span class="ok">connected</span> <span class="muted">via ${esc(p.source)}</span>` : '<span class="muted">not connected</span>'}${p.note?`<div class="muted" style="font-size:12px">${esc(p.note)}</div>`:''}</td>
+    <td class="mono muted">${esc((p.env||[]).join(' | '))}</td>
+    <td>${p.stored ? `<span class="mono">${esc(p.masked)}</span>` : `<input type="password" placeholder="paste API key" data-id="${esc(p.id)}" style="width:220px">`}</td>
+    <td>${p.stored ? `<button class="danger" data-del="${esc(p.id)}">remove</button>` : `<button class="primary" data-save="${esc(p.id)}">save</button>`}</td></tr>`).join('');
+  document.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.save, inp = document.querySelector(`input[data-id="${id}"]`); if (!inp.value.trim()) return;
+    try { await api('/auth/' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify({ key: inp.value.trim() }) }); toast('Saved key for ' + id); keys(); } catch (e) { toast(e.message, true); }
+  });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Remove the stored key for ' + b.dataset.del + '?')) return;
+    try { await api('/auth/' + encodeURIComponent(b.dataset.del), { method: 'DELETE' }); toast('Removed'); keys(); } catch (e) { toast(e.message, true); }
+  });
+  document.querySelectorAll('input[data-id]').forEach(i => i.onkeydown = e => { if (e.key === 'Enter') i.closest('tr').querySelector('[data-save]').click(); });
+}
+$('#key-all').onchange = keys; $('#key-filter').oninput = keys;
+
+async function pool() {
+  const s = await api('/pool?all=' + ($('#pool-all').checked ? 1 : 0));
+  const ready = s.models.filter(m => m.connected && !m.cooldown_secs).length, cooling = s.models.filter(m => m.cooldown_secs).length;
+  $('#pool-cards').innerHTML = [['Ready', ready, 'under limits'], ['Cooling down', cooling, 'rate limited / failed'], ['Requests today', s.requests_today, ''], ['Tokens today', fmt(s.tokens_today), ''], ['Strategy', s.strategy, 'lunar/auto default'], ['Catalog', s.catalog_version, `${s.total} models`]]
+    .map(([k, v, sub]) => `<div class="card"><div class="k">${k}</div><div class="v">${esc(v)}</div><div class="s">${esc(sub)}</div></div>`).join('');
+  $('#pool-body').innerHTML = s.models.map(m => `<tr>
+    <td><span class="dot ${!m.connected||m.excluded?'off':m.cooldown_secs?'cool':'on'}"></span><span class="mono">${esc(m.provider)}/${esc(m.id)}</span>${m.tools?'':'<span class="tag">no tools</span>'}<div class="muted" style="font-size:12px">${esc(m.name)} · ${fmt(m.context)} ctx</div></td>
+    <td>${bar(m.quality, 100)}</td><td>${bar(m.speed, 100)}</td>
+    <td>${bar(m.rpm_used, m.rpm)}</td><td>${bar(m.rpd_used, m.rpd)}</td><td>${bar(m.tpm_used, m.tpm)}</td><td>${bar(m.tpd_used, m.tpd)}</td>
+    <td class="muted">${m.ttft_ms ? m.ttft_ms + 'ms · ' + m.tps + ' tok/s' : '—'}</td>
+    <td>${m.excluded ? '<span class="muted">excluded</span>' : m.cooldown_secs ? `<span class="err">⏸ ${Math.ceil(m.cooldown_secs/60)}m</span><div class="muted" style="font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(m.last_error)}">${esc(m.last_error)}</div>` : m.connected ? '<span class="ok">ready</span>' : '<span class="muted">no key</span>'}</td></tr>`).join('');
+}
+$('#pool-all').onchange = pool;
+$('#pool-reset').onclick = async () => { await api('/pool/reset', { method: 'POST' }); toast('Cooldowns cleared'); pool(); };
+
+async function sessions() {
+  const s = await api('/sessions');
+  $('#sess-body').innerHTML = s.map(x => `<tr><td>${esc(x.title)}<div class="mono muted" style="font-size:11px">${esc(x.id)}</div></td><td class="mono muted">${esc(x.model||'')}</td><td>${fmt(x.tokens)}</td><td>$${x.cost.toFixed(4)}</td><td class="muted">${ago(x.updated)}</td><td><span class="mono muted">lz -s ${esc(x.id)}</span></td></tr>`).join('') || '<tr><td colspan=6 class="muted">No sessions in this project yet.</td></tr>';
+}
+async function config() { const s = await api('/config'); $('#cfg-path').textContent = s.global_dir; $('#cfg').textContent = JSON.stringify(s.config, null, 2); }
+const loaders = { overview, keys, pool, sessions, config };
+async function load(tab) { try { await loaders[tab](); } catch (e) { if (e.message !== 'unauthorized') toast(e.message, true); } }
+load('overview');
+setInterval(() => { const t = document.querySelector('nav a.active').dataset.tab; if (t === 'overview' || t === 'pool') load(t); }, 5000);
+</script>
+</body>
+</html>

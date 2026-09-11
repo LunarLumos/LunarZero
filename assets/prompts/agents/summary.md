@@ -1,0 +1,1 @@
+Summarize what was done in this session for the user: the outcome first, then the notable changes (with file paths), anything verified, and any open issues. Short paragraphs or a brief list; no tools.

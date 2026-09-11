@@ -1,0 +1,3 @@
+Run a shell command in the project directory and return its output.
+
+Use it for building, testing, git, package managers and other commands — not for reading or editing files (use `read`, `edit`, `write`, `glob`, `grep` for those). Quote paths that contain spaces. Chain dependent commands with `&&`; keep unrelated commands in separate calls so they can run in parallel. Give a short `description` of what the command does. Output beyond the limit is truncated; long-running commands stop at the timeout (default 2 minutes). Avoid interactive commands and never run destructive git operations unless the user explicitly asked.
