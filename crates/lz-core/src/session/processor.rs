@@ -415,10 +415,22 @@ impl Ctx {
             LlmEvent::TextDelta { text, .. } => {
                 let sessions = self.engine.sessions.clone();
                 if let Some(part) = &mut self.current_text {
+                    let mut looping = false;
                     if let PartKind::Text { text: t, .. } = &mut part.kind {
                         t.push_str(&text);
+                        // check every ~400 chars; cheap and early enough
+                        let len = t.len();
+                        if (len / 400) != ((len - text.len()) / 400)
+                            && (t.len() > super::loop_guard::MAX_TEXT_CHARS && !self.tools.is_empty()
+                                || super::loop_guard::is_looping(t))
+                        {
+                            looping = true;
+                        }
                     }
                     let _ = sessions.update_part_delta(part, "text", &text).await;
+                    if looping {
+                        return Err(LOOP_MARKER.into());
+                    }
                 }
             }
             LlmEvent::TextEnd { .. } => {
@@ -587,6 +599,13 @@ impl Ctx {
             .await;
     }
 
+    /// Drop the text part being streamed (used when the model looped).
+    async fn discard_text(&mut self) {
+        if let Some(part) = self.current_text.take() {
+            let _ = self.sessions().remove_part(&part).await;
+        }
+    }
+
     /// Failover: re-point the assistant message at another model.
     async fn switch_model(&mut self, model: Model, reason: &str) {
         self.model = model;
@@ -626,12 +645,15 @@ impl Ctx {
     }
 }
 
+/// `ctx.handle` returns this when the model is repeating itself.
+pub const LOOP_MARKER: &str = "model stuck repeating itself";
+
 /// Errors that justify switching pool models: limits, outages, dead model ids,
 /// bad keys — anything except aborts, context overflow and content policy.
 fn failover_worthy(e: &LlmError) -> bool {
     match e {
         LlmError::Aborted | LlmError::ContextOverflow { .. } | LlmError::ContentPolicy { .. } => false,
-        LlmError::InvalidOutput { .. } => false,
+        LlmError::InvalidOutput { message } => message == LOOP_MARKER,
         LlmError::Provider { .. } => true,
         _ => true,
     }
@@ -893,8 +915,28 @@ pub async fn process(input: ProcessInput) -> StepResult {
                 break;
             }
             Some(err) => {
-                let produced_output =
-                    ctx.current_text.is_some() || !ctx.calls.is_empty() || !ctx.reasoning.is_empty();
+                let looped = matches!(&err, LlmError::InvalidOutput { message } if message == LOOP_MARKER);
+                if looped {
+                    // throw the repeated text away so it never reaches the history
+                    ctx.discard_text().await;
+                    engine.bus.publish(Event::SessionError {
+                        session_id: Some(session_id.clone()),
+                        error: MessageError::Unknown {
+                            message: format!(
+                                "{} — {}",
+                                LOOP_MARKER,
+                                if failover_enabled {
+                                    "switching model"
+                                } else {
+                                    "stopped"
+                                }
+                            ),
+                            r#ref: None,
+                        },
+                    });
+                }
+                let produced_output = !looped
+                    && (ctx.current_text.is_some() || !ctx.calls.is_empty() || !ctx.reasoning.is_empty());
                 // free-pool failover: cool the model down and jump to the next
                 // candidate right away (only while nothing was streamed yet)
                 if failover_enabled && !produced_output && failover_worthy(&err) {

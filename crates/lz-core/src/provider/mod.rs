@@ -74,10 +74,12 @@ pub struct Provider {
 
 impl Provider {
     pub fn connected(&self) -> bool {
-        if is_local(&self.base_url) {
-            return self.reachable || (self.source == "config" && self.api_key.is_some());
+        // explicitly configured providers are trusted; catalog-listed local
+        // servers only count when something is listening
+        if self.source == "config" || self.api_key.is_some() {
+            return true;
         }
-        self.api_key.is_some() || self.source == "config"
+        is_local(&self.base_url) && self.reachable
     }
 }
 

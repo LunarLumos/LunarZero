@@ -3,6 +3,7 @@
 
 pub mod compaction;
 pub mod history;
+pub mod loop_guard;
 pub mod processor;
 pub mod reminders;
 pub mod retry;
