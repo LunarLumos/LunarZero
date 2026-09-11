@@ -348,6 +348,9 @@ pub trait EngineApi: Send + Sync + 'static {
     async fn shell(&self, id: &str, req: ShellRequest) -> ApiResult<()>;
     async fn abort(&self, id: &str) -> ApiResult<()>;
     async fn summarize(&self, id: &str, model: Option<ModelRef>) -> ApiResult<()>;
+    /// Continue an interrupted or failed turn from its last completed step —
+    /// no new user message, the plan and files written so far are kept.
+    async fn resume(&self, id: &str, model: Option<ModelRef>) -> ApiResult<()>;
     async fn fork(&self, id: &str, at: Option<MessageId>) -> ApiResult<SessionInfo>;
     async fn revert(&self, id: &str, message_id: &str, part_id: Option<PartId>) -> ApiResult<SessionInfo>;
     async fn unrevert(&self, id: &str) -> ApiResult<SessionInfo>;

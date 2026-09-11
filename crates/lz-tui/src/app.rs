@@ -170,6 +170,10 @@ const SLASH: &[(&str, &str)] = &[
     ("init", "Create/update AGENTS.md"),
     ("details", "Toggle tool details"),
     ("thinking", "Toggle thinking blocks"),
+    (
+        "retry",
+        "Resume the interrupted turn from its last step (also: /resume, /continue)",
+    ),
     ("web", "Open the web portal (keys, pool, settings, chat)"),
     (
         "install",
@@ -734,7 +738,10 @@ impl App {
             }
             Event::SessionError { error, .. } => {
                 if !matches!(error, MessageError::Aborted { .. }) {
-                    self.toasts.push(ToastKind::Error, error.summary(140));
+                    self.toasts.push(
+                        ToastKind::Error,
+                        format!("{}  ·  /retry resumes", error.summary(120)),
+                    );
                 }
             }
             Event::SessionUpdated { info, .. } => {
@@ -1465,6 +1472,18 @@ impl App {
                 }
             }
             PromptMode::Normal => {
+                // "retry" / "continue" after a failed turn means resume, not a new message
+                let word = text.trim().trim_end_matches(['.', '!']).to_lowercase();
+                if self.last_turn_broken()
+                    && matches!(
+                        word.as_str(),
+                        "retry" | "resume" | "continue" | "go on" | "carry on" | "try again" | "again"
+                    )
+                {
+                    self.finish_input(&raw);
+                    self.resume_turn();
+                    return;
+                }
                 if self.model.is_none() {
                     self.toast(ToastKind::Error, "No model selected — use /models or /connect");
                     return;
@@ -1722,6 +1741,7 @@ impl App {
                     self.refresh_meta();
                 }
             }
+            "retry" | "resume" | "continue" => self.resume_turn(),
             "web" => match self.web_url.clone() {
                 Some(url) => {
                     crate::clipboard::copy(&url);
@@ -1746,6 +1766,33 @@ impl App {
             _ => return false,
         }
         true
+    }
+
+    /// Is the last assistant step of the current session failed/aborted?
+    fn last_turn_broken(&self) -> bool {
+        let Some(sid) = &self.session else { return false };
+        matches!(self.store.messages_of(sid).last(), Some(Message::Assistant(a)) if a.error.is_some())
+    }
+
+    fn resume_turn(&mut self) {
+        let Some(id) = self.session.clone() else {
+            self.toast(ToastKind::Info, "No session to resume");
+            return;
+        };
+        if self.store.is_busy(&id) {
+            self.toast(ToastKind::Info, "Still running");
+            return;
+        }
+        let api = self.api.clone();
+        let model = self.model.clone();
+        self.follow = true;
+        self.spawn(async move {
+            api.resume(&id, model).await?;
+            Ok(Some(Msg::Toast(
+                ToastKind::Success,
+                "Resuming from the last completed step".into(),
+            )))
+        });
     }
 
     fn toggle_details(&mut self) {

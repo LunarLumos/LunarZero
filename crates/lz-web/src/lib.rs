@@ -77,6 +77,7 @@ pub async fn start(engine: Arc<lz_core::Engine>, port: u16, version: &str) -> an
         .route("/session/{id}/messages", get(session_messages))
         .route("/session/{id}/prompt", post(session_prompt))
         .route("/session/{id}/abort", post(session_abort))
+        .route("/session/{id}/resume", post(session_resume))
         .route("/permission/{id}", post(permission_reply))
         .route("/question/{id}", post(question_reply))
         .route("/agents", get(agents))
@@ -581,6 +582,31 @@ async fn session_prompt(
         ..Default::default()
     };
     s.engine.prompt_async(&id, req).await.map_err(err)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ResumeBody {
+    model: Option<String>,
+}
+
+async fn session_resume(
+    State(s): St,
+    Path(id): Path<String>,
+    body: Option<Json<ResumeBody>>,
+) -> Result<Json<Value>, ApiErr> {
+    let model = body
+        .and_then(|b| b.0.model)
+        .filter(|m| !m.is_empty())
+        .and_then(|spec| {
+            let (p, m) = spec.split_once('/')?;
+            Some(ModelRef {
+                provider_id: p.into(),
+                model_id: m.into(),
+                variant: None,
+            })
+        });
+    s.engine.resume(&id, model).await.map_err(err)?;
     Ok(Json(json!({ "ok": true })))
 }
 

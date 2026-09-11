@@ -107,6 +107,7 @@
           <select id="agent-select" title="agent"></select>
           <select id="model-select" title="model" style="max-width:260px"></select>
           <button id="abort" class="danger" style="display:none">stop</button>
+          <button id="resume" class="primary" style="display:none" title="continue the interrupted turn from its last step">resume</button>
           <button id="del-session" class="danger" title="delete session">✕</button>
         </div>
         <div class="transcript" id="transcript"><p class="muted">Pick a session on the left or type below. Anything you send here also appears live in the terminal, and vice-versa.</p></div>
@@ -306,6 +307,8 @@ function render() {
   t.innerHTML = html.join('');
   if (atBottom || chat.follow) t.scrollTop = t.scrollHeight;
   $('#abort').style.display = chat.busy ? '' : 'none';
+  const lastMsg = chat.messages.get(chat.order[chat.order.length - 1]);
+  $('#resume').style.display = !chat.busy && lastMsg && lastMsg.role === 'assistant' && lastMsg.error ? '' : 'none';
   renderAsks();
 }
 function renderAsks() {
@@ -342,6 +345,7 @@ async function send() {
 $('#send').onclick = send;
 $('#prompt').onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
 $('#abort').onclick = () => chat.session && api('/session/' + chat.session + '/abort', { method: 'POST' }).catch(e => toast(e.message, true));
+$('#resume').onclick = () => chat.session && api('/session/' + chat.session + '/resume', { method: 'POST', body: JSON.stringify({ model: $('#model-select').value || null }) }).then(() => { chat.busy = true; chat.follow = true; render(); }).catch(e => toast(e.message, true));
 $('#new-session').onclick = () => { chat.session = null; chat.messages.clear(); chat.parts.clear(); chat.order = []; $('#chat-title').textContent = 'New session — send a message to start'; $('#chat-stats').textContent = ''; render(); loadSessions(); $('#prompt').focus(); };
 $('#del-session').onclick = async () => { if (!chat.session || !confirm('Delete this session?')) return; await api('/session/' + chat.session, { method: 'DELETE' }); $('#new-session').onclick(); };
 

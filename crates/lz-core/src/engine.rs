@@ -925,6 +925,44 @@ impl EngineApi for Engine {
         self.runner.abort(id).await;
         Ok(())
     }
+    async fn resume(&self, id: &str, model: Option<ModelRef>) -> ApiResult<()> {
+        if self.runner.is_running(id) {
+            return Err(ApiError::Busy);
+        }
+        let msgs = self.sessions.messages(id, None, None).await.map_err(Self::err)?;
+        let Some(last) = msgs.last() else {
+            return Err(ApiError::invalid("nothing to resume in this session"));
+        };
+        // continue with the model the user has selected now (the failing one
+        // may be the reason the turn stopped)
+        if let Some(m) = model
+            && let Some(user) = msgs.iter().rev().find_map(|x| match &x.info {
+                Message::User(u) => Some(u.clone()),
+                _ => None,
+            })
+            && (user.model.provider_id != m.provider_id || user.model.model_id != m.model_id)
+        {
+            let mut u = user;
+            u.model = m;
+            self.sessions
+                .update_message(Message::User(u))
+                .await
+                .map_err(Self::err)?;
+        }
+        // clear the error on the last assistant step so the loop can pick up
+        if let Message::Assistant(a) = &last.info
+            && a.error.is_some()
+        {
+            let mut fixed = a.clone();
+            fixed.error = None;
+            self.sessions
+                .update_message(Message::Assistant(fixed))
+                .await
+                .map_err(Self::err)?;
+        }
+        self.runner.ensure_running(self.self_arc(), id.to_string());
+        Ok(())
+    }
     async fn summarize(&self, id: &str, _model: Option<ModelRef>) -> ApiResult<()> {
         let msgs = self
             .sessions

@@ -127,6 +127,9 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
   fastest; `lunar/smart` and `lunar/fast` force one. Sessions stick to a model for 30 minutes.
 - Speed is learned, not just assumed: time-to-first-token and tokens/s are measured per model
   and blended into the ranking.
+- **Resume, don't restart**: a turn that stopped (error, quota, `esc`) continues from its last
+  completed step with `/retry` (or just typing `retry`/`continue`), keeping the plan and every file
+  already written; the model you have selected now is used.
 - **Immediate failover**: a 429/5xx/timeout/bad key before any output streamed switches to the
   next model at once (no backoff); the failed one cools down (rate windows, daily quotas until
   UTC midnight, bad keys for an hour) and the TUI footer shows `→ provider/model`.
@@ -160,7 +163,7 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
 `t` themes · `b` sidebar · `c` compact · `u` undo · `r` redo · `e` editor · `x` export · `?` help.
 
 Slash commands: `/new /sessions /models /agents /variants /mcps /themes /connect /skills /install
-/web /help /status /compact /undo /redo /fork /rename /export /copy /editor /init /details /thinking /exit`
+/retry /web /help /status /compact /undo /redo /fork /rename /export /copy /editor /init /details /thinking /exit`
 plus your `command/*.md`, skills and MCP prompts.
 
 Skills (`SKILL.md` folders) are found in `.lunarzero/skills`, `~/.config/lunarzero/skills`, `.claude/skills`,
