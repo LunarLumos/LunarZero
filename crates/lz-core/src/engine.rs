@@ -858,6 +858,43 @@ impl EngineApi for Engine {
             .map_err(ApiError::not_found)?;
         self.reload().await.map_err(Self::err)
     }
+    async fn install_mcp(
+        &self,
+        source: &str,
+        name: Option<String>,
+        global: bool,
+    ) -> ApiResult<McpInstallInfo> {
+        let installed = crate::mcp_install::install(&self.paths, source, name)
+            .await
+            .map_err(ApiError::invalid)?;
+        let path = crate::mcp_install::config_file(&self.paths, &self.directory, global);
+        crate::mcp_install::register(&path, &installed).map_err(ApiError::invalid)?;
+        self.reload().await.map_err(Self::err)?;
+        self.reload_mcp().await;
+        let status = match self.mcp.status().await.get(&installed.name) {
+            Some(McpStatus::Connected) => "connected".to_string(),
+            Some(McpStatus::Failed { error }) => format!("failed: {error}"),
+            Some(other) => format!("{other:?}").to_lowercase(),
+            None => "unknown".into(),
+        };
+        let prefix = format!("{}_", crate::mcp::sanitize(&installed.name));
+        let tools: Vec<String> = self
+            .mcp
+            .tools()
+            .await
+            .iter()
+            .filter(|t| t.id().starts_with(&prefix))
+            .map(|t| t.id().to_string())
+            .collect();
+        Ok(McpInstallInfo {
+            name: installed.name,
+            command: installed.command,
+            runtime: installed.runtime,
+            config_path: path.display().to_string(),
+            status,
+            tools,
+        })
+    }
     async fn mcp_connect(&self, name: &str) -> ApiResult<()> {
         self.mcp
             .connect_one(name, &self.directory, &self.bus)

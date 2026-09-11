@@ -10,6 +10,7 @@ pub mod files;
 pub mod llm;
 pub mod lsp;
 pub mod mcp;
+pub mod mcp_install;
 pub mod paths;
 pub mod permission;
 pub mod project;

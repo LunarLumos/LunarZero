@@ -120,7 +120,7 @@ portal on its own without the TUI; `tui.json` `"web": {"enabled": false}` or `LZ
 | `lz models [provider] [--refresh]` | list models |
 | `lz agent list\|create` | agents (built-in + `.lunarzero/agent/*.md`) |
 | `lz skill list\|install <src> [--project]\|remove\|update` | skills; `<src>` = `owner/repo`, a GitHub link (sub-folder ok) or git URL |
-| `lz mcp list\|add <name> --command … \| --url …` | MCP servers |
+| `lz mcp list\|install <src> [--name n] [--global]\|add …` | MCP servers; `install` takes `owner/repo`, a GitHub link (sub-folder ok), `npm:<pkg>` or `pypi:<pkg>`, builds it and connects |
 | `lz pool setup\|list\|status` | free-tier pool: providers & keys, models & limits, usage |
 | `lz web [--port 7411] [--no-open]` | run the web portal on its own (it also starts with the TUI) |
 | `lz session list\|delete`, `lz export`, `lz import` | sessions |
@@ -142,6 +142,11 @@ Skills (`SKILL.md` folders) are found in `.lunarzero/skills`, `~/.config/lunarze
 `.agents/skills` and `skills.paths`. Install from GitHub with `lz skill install owner/repo` (or a link to
 a sub-folder), `/install …` in the TUI, the portal's Settings tab, or just tell the agent
 "install the skill at <link>" — it runs the installer for you. `skills.urls` in config auto-installs on start.
+
+MCP servers work the same way: `lz mcp install https://github.com/modelcontextprotocol/servers/tree/main/src/memory`
+clones, runs `npm install`/`build` (or `uv`/venv for Python, `cargo`/`go build`), finds the entry point,
+writes the `mcp.<name>` config entry and connects it; `npm:<pkg>` / `pypi:<pkg>` register `npx -y` / `uvx`
+launchers without cloning. Also `/install --mcp <src>` in the TUI, the portal's Settings tab, or ask the agent.
 
 ## Layout
 

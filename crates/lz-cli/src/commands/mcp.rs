@@ -10,6 +10,7 @@ use crate::commands::config::resolve_dir;
 pub async fn run(cmd: McpCommand) -> anyhow::Result<i32> {
     match cmd {
         McpCommand::List => list().await,
+        McpCommand::Install { source, name, global } => install(source, name, global).await,
         McpCommand::Add {
             name,
             command,
@@ -59,6 +60,35 @@ async fn list() -> anyhow::Result<i32> {
     }
     engine.shutdown().await;
     Ok(0)
+}
+
+async fn install(source: String, name: Option<String>, global: bool) -> anyhow::Result<i32> {
+    use lz_schema::api::EngineApi;
+    let directory = resolve_dir(&None)?;
+    let engine = lz_core::Engine::start(lz_core::EngineOptions {
+        directory,
+        auto_approve: false,
+        offline: false,
+    })
+    .await?;
+    println!("installing MCP server from {source}…");
+    let r = engine
+        .install_mcp(&source, name, global)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
+    println!("registered `{}` in {}", r.name, r.config_path);
+    println!("  runtime: {}\n  command: {}", r.runtime, r.command.join(" "));
+    println!(
+        "  status:  {}{}",
+        r.status,
+        if r.tools.is_empty() {
+            String::new()
+        } else {
+            format!(" — {} tools: {}", r.tools.len(), r.tools.join(", "))
+        }
+    );
+    engine.shutdown().await;
+    Ok(if r.status == "connected" { 0 } else { 1 })
 }
 
 fn add(name: String, command: Vec<String>, url: Option<String>, global: bool) -> anyhow::Result<i32> {

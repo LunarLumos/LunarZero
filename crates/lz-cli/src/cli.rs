@@ -238,6 +238,16 @@ pub enum AgentCommand {
 #[derive(Subcommand, Debug)]
 pub enum McpCommand {
     List,
+    /// Install from GitHub (`owner/repo`, link, sub-folder), `npm:<package>` or `pypi:<package>`, then connect
+    Install {
+        source: String,
+        /// Config entry name (default: derived from the source)
+        #[arg(long)]
+        name: Option<String>,
+        /// Register in the global config instead of this project
+        #[arg(long)]
+        global: bool,
+    },
     Add {
         name: String,
         /// Command for a local (stdio) server

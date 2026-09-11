@@ -82,6 +82,8 @@ pub async fn start(engine: Arc<lz_core::Engine>, port: u16, version: &str) -> an
         .route("/agents", get(agents))
         .route("/skills", get(skills_list).post(skill_install))
         .route("/skills/{name}", axum::routing::delete(skill_remove))
+        .route("/mcp", get(mcp_list).post(mcp_install))
+        .route("/mcp/{name}/toggle", post(mcp_toggle))
         .route("/models", get(models))
         .route("/config", get(config_get))
         .route("/config/{scope}", put(config_put))
@@ -663,6 +665,59 @@ async fn skill_install(State(s): St, Json(b): Json<SkillInstallBody>) -> Result<
 
 async fn skill_remove(State(s): St, Path(name): Path<String>) -> Result<Json<Value>, ApiErr> {
     s.engine.remove_skill(&name).await.map_err(err)?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+async fn mcp_list(State(s): St) -> Json<Value> {
+    let status = s.engine.mcp.status().await;
+    let cfg = s.engine.config();
+    let tools = s.engine.mcp.tools().await;
+    let rows: Vec<Value> = cfg
+        .mcp
+        .as_ref()
+        .map(|m| m.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|name| {
+            let prefix = format!("{}_", lz_core::mcp::sanitize(&name));
+            let n = tools.iter().filter(|t| t.id().starts_with(&prefix)).count();
+            let st = match status.get(&name) {
+                Some(McpStatus::Connected) => "connected".to_string(),
+                Some(McpStatus::Disabled) => "disabled".into(),
+                Some(McpStatus::Failed { error }) => format!("failed: {error}"),
+                Some(McpStatus::NeedsAuth) => "needs auth".into(),
+                None => "unknown".into(),
+            };
+            json!({ "name": name, "status": st, "tools": n })
+        })
+        .collect();
+    Json(Value::Array(rows))
+}
+
+#[derive(serde::Deserialize)]
+struct McpInstallBody {
+    source: String,
+    name: Option<String>,
+    #[serde(default)]
+    global: bool,
+}
+
+async fn mcp_install(State(s): St, Json(b): Json<McpInstallBody>) -> Result<Json<Value>, ApiErr> {
+    let r = s
+        .engine
+        .install_mcp(&b.source, b.name.filter(|n| !n.trim().is_empty()), b.global)
+        .await
+        .map_err(err)?;
+    Ok(Json(serde_json::to_value(r).unwrap_or(Value::Null)))
+}
+
+async fn mcp_toggle(State(s): St, Path(name): Path<String>) -> Result<Json<Value>, ApiErr> {
+    let connected = matches!(s.engine.mcp.status().await.get(&name), Some(McpStatus::Connected));
+    if connected {
+        s.engine.mcp_disconnect(&name).await.map_err(err)?
+    } else {
+        s.engine.mcp_connect(&name).await.map_err(err)?
+    }
     Ok(Json(json!({ "ok": true })))
 }
 

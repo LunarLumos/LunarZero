@@ -1,1 +1,1 @@
-Load a listed skill's instructions before doing work it covers. To add a skill the user points at (a GitHub link or owner/repo), run `"$LZ_BIN" skill install <source>` with bash; it is available from the next turn.
+Load a listed skill's instructions before doing work it covers.

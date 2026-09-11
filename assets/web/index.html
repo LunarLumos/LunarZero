@@ -186,6 +186,11 @@
         <div id="s-skills" class="muted" style="font-size:12.5px;margin-top:8px"></div>
       </div>
       <div class="card form">
+        <h3>MCP servers</h3>
+        <div class="row"><input type="text" id="mcp-src" placeholder="owner/repo, GitHub link (sub-folder ok), npm:pkg or pypi:pkg" style="flex:1"><input type="text" id="mcp-name" placeholder="name (optional)" style="width:120px"><label class="muted"><input type="checkbox" id="mcp-global"> global</label><button class="primary" id="mcp-install">Install</button></div>
+        <div id="s-mcp" class="muted" style="font-size:12.5px;margin-top:8px"></div>
+      </div>
+      <div class="card form">
         <h3>Agents</h3>
         <div id="s-agents" class="muted" style="font-size:12.5px"></div>
         <p class="muted" style="font-size:12px">Add your own as <span class="mono">.lunarzero/agent/&lt;name&gt;.md</span> (frontmatter = settings, body = system prompt).</p>
@@ -411,7 +416,7 @@ async function settings() {
   $('#s-agent').innerHTML = '<option value="">build</option>' + cfgState.agents.filter(a => a.mode !== 'subagent').map(a => `<option value="${esc(a.name)}">${esc(a.name)}</option>`).join('');
   $('#s-theme').innerHTML = THEMES.map(t => `<option value="${t}">${t}</option>`).join('');
   $('#s-agents').innerHTML = cfgState.agents.map(a => `<div><b>${esc(a.name)}</b> <span class="tag">${esc(a.mode)}</span>${a.builtin ? '' : '<span class="tag">custom</span>'} ${a.model ? '<span class="mono">' + esc(a.model) + '</span>' : ''}<div>${esc(a.description || '')}</div></div>`).join('');
-  fillForm(); renderSkills();
+  fillForm(); renderSkills(); renderMcp();
   $('#raw-files').innerHTML = cfgState.files.map(f => `<details class="raw"><summary>${esc(f.scope)} — <span class="mono">${esc(f.path)}</span>${f.exists ? '' : ' (not created yet)'} · ${esc(f.description)}</summary><textarea rows="14" data-raw="${esc(f.scope)}">${esc(f.text)}</textarea><div class="row" style="margin:6px 0 12px"><button class="primary" data-rawsave="${esc(f.scope)}">Save file</button></div></details>`).join('');
   document.querySelectorAll('[data-rawsave]').forEach(b => b.onclick = async () => { const ta = document.querySelector(`textarea[data-raw="${b.dataset.rawsave}"]`); try { await api('/config/' + b.dataset.rawsave, { method: 'PUT', body: JSON.stringify({ text: ta.value }) }); toast('Saved ' + b.dataset.rawsave + ' config'); settings(); loadMeta(); } catch (e) { toast(e.message, true); } });
 }
@@ -425,6 +430,17 @@ $('#skill-install').onclick = async () => {
   $('#skill-install').disabled = true; toast('Cloning ' + source + '…');
   try { const list = await api('/skills', { method: 'POST', body: JSON.stringify({ source, project: $('#skill-project').checked }) }); toast('Installed: ' + list.map(s => s.name).join(', ')); $('#skill-src').value = ''; renderSkills(); }
   catch (e) { toast(e.message, true); } finally { $('#skill-install').disabled = false; }
+};
+async function renderMcp() {
+  const list = await api('/mcp');
+  $('#s-mcp').innerHTML = list.map(m => `<div style="display:flex;gap:8px;align-items:baseline"><span class="dot ${m.status === 'connected' ? 'on' : m.status.startsWith('failed') ? 'cool' : 'off'}"></span><b>${esc(m.name)}</b><span style="flex:1">${esc(m.status)} · ${m.tools} tools</span><button data-mcp-toggle="${esc(m.name)}">${m.status === 'connected' ? 'disconnect' : 'connect'}</button></div>`).join('') || 'No MCP servers configured — install one above.';
+  document.querySelectorAll('[data-mcp-toggle]').forEach(b => b.onclick = async () => { try { await api('/mcp/' + encodeURIComponent(b.dataset.mcpToggle) + '/toggle', { method: 'POST' }); setTimeout(renderMcp, 800); } catch (e) { toast(e.message, true); } });
+}
+$('#mcp-install').onclick = async () => {
+  const source = $('#mcp-src').value.trim(); if (!source) return;
+  $('#mcp-install').disabled = true; toast('Installing ' + source + '… this can take a minute');
+  try { const r = await api('/mcp', { method: 'POST', body: JSON.stringify({ source, name: $('#mcp-name').value.trim() || null, global: $('#mcp-global').checked }) }); toast(`MCP ${r.name}: ${r.status} (${r.tools.length} tools)`, r.status !== 'connected'); $('#mcp-src').value = ''; renderMcp(); }
+  catch (e) { toast(e.message, true); } finally { $('#mcp-install').disabled = false; }
 };
 function scopeFile() { return cfgState.files.find(f => f.scope === $('#cfg-scope').value); }
 function fillForm() {

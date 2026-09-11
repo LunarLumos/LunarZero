@@ -171,7 +171,7 @@ const SLASH: &[(&str, &str)] = &[
     ("web", "Open the web portal (keys, pool, settings, chat)"),
     (
         "install",
-        "Install a skill from GitHub: /install owner/repo or URL",
+        "Install a skill (or --mcp server) from GitHub / npm: / pypi:",
     ),
     ("exit", "Exit"),
 ];
@@ -1673,8 +1673,32 @@ impl App {
                 if args.trim().is_empty() {
                     self.toast(
                         ToastKind::Info,
-                        "Usage: /install owner/repo  (or a GitHub URL, add --project for this project only)",
+                        "Usage: /install <owner/repo | GitHub URL> [--project]   ·   /install --mcp <source | npm:pkg | pypi:pkg> [--global]",
                     );
+                } else if args.contains("--mcp") {
+                    let global = args.contains("--global");
+                    let source = args
+                        .replace("--mcp", "")
+                        .replace("--global", "")
+                        .trim()
+                        .to_string();
+                    let api = self.api.clone();
+                    self.toast(
+                        ToastKind::Info,
+                        format!("Installing MCP server from {source}… (this can take a minute)"),
+                    );
+                    self.spawn(async move {
+                        let r = api.install_mcp(&source, None, global).await?;
+                        Ok(Some(Msg::Toast(
+                            if r.status == "connected" {
+                                ToastKind::Success
+                            } else {
+                                ToastKind::Warning
+                            },
+                            format!("MCP `{}`: {} ({} tools)", r.name, r.status, r.tools.len()),
+                        )))
+                    });
+                    self.refresh_meta();
                 } else {
                     let project = args.contains("--project");
                     let source = args.replace("--project", "").trim().to_string();

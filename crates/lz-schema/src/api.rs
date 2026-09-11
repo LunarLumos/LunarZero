@@ -160,6 +160,16 @@ pub struct CommandInfo {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct McpInstallInfo {
+    pub name: String,
+    pub command: Vec<String>,
+    pub runtime: String,
+    pub config_path: String,
+    pub status: String,
+    pub tools: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SkillInfo {
     pub name: String,
@@ -350,6 +360,14 @@ pub trait EngineApi: Send + Sync + 'static {
     /// Install skills from a git source (`owner/repo`, GitHub URL, optional sub-path).
     async fn install_skill(&self, source: &str, global: bool) -> ApiResult<Vec<SkillInfo>>;
     async fn remove_skill(&self, name: &str) -> ApiResult<()>;
+    /// Install an MCP server from GitHub / `npm:` / `pypi:`, register it in the
+    /// project (or global) config and connect it. Returns the config entry name.
+    async fn install_mcp(
+        &self,
+        source: &str,
+        name: Option<String>,
+        global: bool,
+    ) -> ApiResult<McpInstallInfo>;
     async fn mcp_connect(&self, name: &str) -> ApiResult<()>;
     async fn mcp_disconnect(&self, name: &str) -> ApiResult<()>;
 
