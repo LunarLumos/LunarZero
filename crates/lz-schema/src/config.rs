@@ -330,6 +330,23 @@ pub struct ToolOutputConfig {
     pub max_bytes: Option<usize>,
 }
 
+/// `smart`: choose skills, MCP servers and model strategy from the prompt.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct SmartConfig {
+    /// Describe only relevant skills in the prompt (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skills: Option<bool>,
+    /// Attach a clearly matching skill's content instead of waiting for a tool call (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attach_skill: Option<bool>,
+    /// Send an MCP server's tools only when the prompt or session relates to it (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp: Option<bool>,
+    /// MCP servers whose tools are always sent, regardless of relevance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_always: Option<Vec<String>>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct ProjectMapConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -350,6 +367,10 @@ pub struct PoolConfig {
     /// Fail over to another pool model when a pool model is rate limited (default true).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fallback: Option<bool>,
+    /// When a model outside the pool fails hard (quota, outage, bad key), continue
+    /// on the best pool model instead of erroring (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rescue: Option<bool>,
     /// Keep a session on the same routed model for this long (default 30).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sticky_minutes: Option<u64>,
@@ -462,6 +483,9 @@ pub struct Config {
     pub compaction: Option<CompactionConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<PoolConfig>,
+    /// Prompt-aware selection of skills, MCP servers and routing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smart: Option<SmartConfig>,
     /// Compact repository map in the system prompt (default on, ~1.5k chars).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_map: Option<ProjectMapConfig>,

@@ -72,6 +72,48 @@ pub const BUILTIN: &[(&str, &str)] = builtin![
     "testing",
 ];
 
+/// Extra trigger words for built-in skills (their descriptions are terse).
+pub fn builtin_keywords(name: &str) -> &'static str {
+    match name {
+        "debugging" => "bug error crash fail failing broken exception panic stack trace wrong debug fix",
+        "testing" => "test tests unit integration coverage pytest jest cargo spec assert mock fixture",
+        "git-workflow" => "git commit branch merge rebase push pull request pr history stash",
+        "code-review" => "review audit critique feedback diff pr quality",
+        "refactoring" => "refactor rename extract restructure cleanup simplify duplicate move split",
+        "performance" => "slow performance optimize speed fast latency memory profile benchmark cpu",
+        "security-review" => {
+            "security vulnerability injection xss csrf auth secret token password exploit owasp safe"
+        }
+        "codebase-map" => "explore understand structure architecture where explain overview layout navigate",
+        "api-design" => "api endpoint rest http route json schema openapi request response",
+        "release" => "release version changelog tag publish deploy bump semver",
+        _ => "",
+    }
+}
+
+/// Skills ranked against the user's prompt: (score, skill).
+pub fn rank<'a>(list: &[&'a Skill], user_text: &str) -> Vec<(f64, &'a Skill)> {
+    let q = crate::relevance::tokens(user_text);
+    let mut out: Vec<(f64, &Skill)> = list
+        .iter()
+        .map(|s| {
+            let hay = format!(
+                "{} {} {}",
+                s.name,
+                s.description.as_deref().unwrap_or(""),
+                builtin_keywords(&s.name)
+            );
+            (crate::relevance::score(&q, &hay), *s)
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.name.cmp(&b.1.name))
+    });
+    out
+}
+
 pub fn discover(
     paths: &Paths,
     config: &Config,

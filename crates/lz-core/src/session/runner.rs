@@ -573,6 +573,7 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 })
                 .unwrap_or_default(),
         };
+        let user_text = need.user_text.clone();
         let (model, route) = match engine.route_model(&model, need, &session_id) {
             Ok(v) => v,
             Err(message) => {
@@ -695,6 +696,48 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
         let mut tools = engine
             .tools
             .resolve(&model, &ruleset, !is_last_step, &agents, &agent);
+        // smart.mcp: send an MCP server's tools only when the prompt (or this
+        // session's history) relates to it; the rest are named in one line
+        let mut mcp_note: Option<String> = None;
+        {
+            let smart = engine.config().smart.clone().unwrap_or_default();
+            if smart.mcp.unwrap_or(true) {
+                let index = engine.mcp.index().await;
+                if !index.is_empty() {
+                    let q = crate::relevance::tokens(&user_text);
+                    let used: std::collections::HashSet<String> = msgs
+                        .iter()
+                        .flat_map(|m| m.parts.iter())
+                        .filter_map(|p| match &p.kind {
+                            PartKind::Tool { tool, .. } => Some(tool.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let always = smart.mcp_always.clone().unwrap_or_default();
+                    let mut drop_ids: Vec<String> = Vec::new();
+                    let mut skipped: Vec<String> = Vec::new();
+                    for (name, ids, text) in &index {
+                        let mentioned = q.contains(&name.to_lowercase())
+                            || user_text.to_lowercase().contains(&name.to_lowercase());
+                        let relevant = mentioned
+                            || always.iter().any(|a| a == name)
+                            || ids.iter().any(|id| used.contains(id))
+                            || crate::relevance::score(&q, text) >= 0.35;
+                        if !relevant {
+                            drop_ids.extend(ids.iter().cloned());
+                            skipped.push(format!("{name} ({} tools)", ids.len()));
+                        }
+                    }
+                    if !drop_ids.is_empty() {
+                        tools.retain(|t| !drop_ids.contains(&t.def.name));
+                        mcp_note = Some(format!(
+                            "MCP servers not loaded for this request (name one to use it): {}",
+                            skipped.join(", ")
+                        ));
+                    }
+                }
+            }
+        }
         let json_schema = match &last_user.format {
             Some(OutputFormat::JsonSchema { schema, .. }) => Some(schema.clone()),
             _ => None,
@@ -738,7 +781,10 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
         if let Some(mcp) = engine.mcp_instructions(&ruleset).await {
             rest.push(mcp);
         }
-        if let Some(skills) = engine.skills_prompt(&agent).await {
+        if let Some(note) = mcp_note {
+            rest.push(note);
+        }
+        if let Some(skills) = engine.skills_prompt(&agent, &user_text).await {
             rest.push(skills);
         }
         if let Some(extra) = &last_user.system {

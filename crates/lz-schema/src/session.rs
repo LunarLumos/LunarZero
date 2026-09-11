@@ -278,6 +278,56 @@ impl MessageError {
             MessageError::Api(d) => d.message.clone(),
         }
     }
+
+    /// One short line for the UI: provider JSON bodies are reduced to their
+    /// `error.message`, whitespace collapsed, capped at `max` chars.
+    pub fn summary(&self, max: usize) -> String {
+        let raw = self.message();
+        let text = json_error_message(&raw).unwrap_or(raw);
+        let mut one: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        // drop trailing "For more information…" boilerplate
+        for marker in [
+            " For more information",
+            " To monitor",
+            " Learn more",
+            " See https://",
+        ] {
+            if let Some(i) = one.find(marker) {
+                one.truncate(i);
+            }
+        }
+        let status = match self {
+            MessageError::Api(d) => d.status_code.map(|c| format!("HTTP {c}: ")).unwrap_or_default(),
+            _ => String::new(),
+        };
+        let mut s = format!("{status}{one}");
+        if s.chars().count() > max {
+            s = s.chars().take(max.saturating_sub(1)).collect::<String>() + "…";
+        }
+        s
+    }
+}
+
+/// `{"error":{"message":…}}`, `[{"error":…}]`, `{"message":…}` → message.
+pub fn json_error_message(text: &str) -> Option<String> {
+    let t = text.trim();
+    if !(t.starts_with('{') || t.starts_with('[')) {
+        return None;
+    }
+    let v: Value = serde_json::from_str(t).ok()?;
+    let v = if let Value::Array(a) = &v {
+        a.first().cloned()?
+    } else {
+        v
+    };
+    v.pointer("/error/message")
+        .or_else(|| v.get("message"))
+        .or_else(|| v.pointer("/error"))
+        .and_then(|m| {
+            m.as_str()
+                .map(str::to_string)
+                .or_else(|| m.get("message").and_then(Value::as_str).map(str::to_string))
+        })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

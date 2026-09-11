@@ -63,6 +63,24 @@ Local models:
 }
 ```
 
+## Prompt-aware selection
+
+Every request is shaped by the prompt, with a deterministic keyword scorer (no extra model call):
+
+- **Model** — `lunar/auto` classifies the task (chat · coding · reasoning · long-context): chat goes
+  to the fastest model, coding to the best tool-capable one, "why/analyze/design/compare" prompts
+  nudge toward thinking models, big prompts toward big context windows. The footer shows the pick
+  and the reason (`smart for reasoning`).
+- **Skills** — only the skills relevant to the prompt are described (the rest by name), and a
+  clear match is attached in full so the model doesn't spend a tool call loading it
+  ("tests are failing after my change" → `debugging` attached).
+- **MCP servers** — a server's tools are sent only when the prompt mentions it, relates to its
+  tools, or it was already used in the session; others are listed in one line so the model can
+  ask for them. `smart.mcp_always` pins servers you always want.
+
+Config: `smart.{skills, attach_skill, mcp, mcp_always}`; hard quota errors (`limit: 0`, billing)
+are never retried, and a non-pool model that fails hard is rescued by the pool (`pool.rescue`).
+
 ## Free-tier pool (`lunar/auto`)
 
 LunarZero has its own catalog of ~280 free models across 13 providers

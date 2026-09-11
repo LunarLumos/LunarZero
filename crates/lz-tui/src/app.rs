@@ -734,7 +734,7 @@ impl App {
             }
             Event::SessionError { error, .. } => {
                 if !matches!(error, MessageError::Aborted { .. }) {
-                    self.toasts.push(ToastKind::Error, error.message());
+                    self.toasts.push(ToastKind::Error, error.summary(140));
                 }
             }
             Event::SessionUpdated { info, .. } => {

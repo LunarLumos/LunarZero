@@ -18,6 +18,7 @@ pub mod project_map;
 pub mod provider;
 pub mod question;
 pub mod recommended;
+pub mod relevance;
 pub mod session;
 pub mod skill;
 pub mod skill_install;

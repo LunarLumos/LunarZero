@@ -275,6 +275,32 @@ impl McpManager {
             .collect()
     }
 
+    /// Per connected server: (name, tool ids, searchable text = name + instructions + tool names/descriptions).
+    pub async fn index(&self) -> Vec<(String, Vec<String>, String)> {
+        let servers = self.servers.read().await;
+        servers
+            .values()
+            .filter(|s| s.client.is_some())
+            .map(|s| {
+                let ids: Vec<String> = s
+                    .tools
+                    .iter()
+                    .map(|t| format!("{}_{}", sanitize(&s.name), sanitize(&t.name)))
+                    .collect();
+                let mut text = format!("{} {} ", s.name, s.instructions.clone().unwrap_or_default());
+                for t in &s.tools {
+                    text.push_str(&t.name);
+                    text.push(' ');
+                    if let Some(d) = &t.description {
+                        text.push_str(d);
+                        text.push(' ');
+                    }
+                }
+                (s.name.clone(), ids, text)
+            })
+            .collect()
+    }
+
     /// LunarZero tool wrappers for every connected server's tools.
     pub async fn tools(&self) -> Vec<Arc<dyn Tool>> {
         let servers = self.servers.read().await;

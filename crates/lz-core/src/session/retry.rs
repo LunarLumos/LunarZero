@@ -25,6 +25,19 @@ fn matches_retryable_message(msg: &str) -> bool {
         .any(|p| regex::Regex::new(p).map(|r| r.is_match(msg)).unwrap_or(false))
 }
 
+/// A 429 that will not clear by waiting a few seconds: exhausted daily or
+/// billing quota. Retrying only wastes time; failover (or a clear error) is better.
+pub fn hard_quota(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("limit: 0")
+        || m.contains("exceeded your current quota")
+        || m.contains("insufficient_quota")
+        || m.contains("billing")
+        || m.contains("per day")
+        || m.contains("daily")
+        || m.contains("requests per day")
+}
+
 /// Whether an error should be retried, with a user-facing message.
 pub fn retryable(error: &LlmError) -> Option<String> {
     match error {
@@ -32,7 +45,13 @@ pub fn retryable(error: &LlmError) -> Option<String> {
         LlmError::InvalidRequest { .. } | LlmError::ContentPolicy { .. } | LlmError::InvalidOutput { .. } => {
             None
         }
-        LlmError::RateLimited { message, .. } => Some(message.clone()),
+        LlmError::RateLimited { message, .. } => {
+            if hard_quota(message) {
+                None
+            } else {
+                Some(message.clone())
+            }
+        }
         LlmError::Network { message } | LlmError::Timeout { message } => Some(message.clone()),
         LlmError::Provider {
             status,
@@ -40,6 +59,9 @@ pub fn retryable(error: &LlmError) -> Option<String> {
             body,
             ..
         } => {
+            if hard_quota(message) || body.as_deref().is_some_and(hard_quota) {
+                return None;
+            }
             if *status >= 500
                 || error.retryable()
                 || matches_retryable_message(message)

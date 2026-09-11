@@ -250,8 +250,8 @@ impl RenderCache {
                                 blocks.push(Block {
                                     key,
                                     lines: vec![Line::from(Span::styled(
-                                        format!("↻ retry {attempt}: {}", short(&error.message(), 100)),
-                                        theme.fg("warning"),
+                                        format!("↻ retry {attempt}/5 · {}", error.summary(90)),
+                                        theme.muted(),
                                     ))],
                                 });
                             }
@@ -261,23 +261,35 @@ impl RenderCache {
                     if let Some(err) = &a.error {
                         if !matches!(err, MessageError::Aborted { .. }) {
                             let key = format!("error-{}", a.id);
-                            let msg = err.message();
-                            let lines = self.cached(&key, hash(&msg), width, || {
-                                let mut out = vec![Line::from(Span::styled(
-                                    format!("✗ {}", error_name(err)),
-                                    theme.bold("error"),
-                                ))];
-                                out.extend(
-                                    wrap_plain(&msg, width.saturating_sub(2), theme.fg("error"))
-                                        .into_iter()
-                                        .map(|l| {
-                                            let mut spans = vec![Span::styled("  ", Style::default())];
-                                            spans.extend(l.spans);
-                                            Line::from(spans)
-                                        }),
-                                );
-                                out
-                            });
+                            let msg = if opts.show_details {
+                                err.message()
+                            } else {
+                                err.summary(160)
+                            };
+                            let lines =
+                                self.cached(&key, hash(&msg) ^ (opts.show_details as u64), width, || {
+                                    let mut out = vec![Line::from(vec![
+                                        Span::styled(format!("✗ {}", error_name(err)), theme.bold("error")),
+                                        Span::styled(
+                                            if opts.show_details {
+                                                ""
+                                            } else {
+                                                "  (/details for the full response)"
+                                            },
+                                            theme.muted(),
+                                        ),
+                                    ])];
+                                    out.extend(
+                                        wrap_plain(&msg, width.saturating_sub(2), theme.fg("error"))
+                                            .into_iter()
+                                            .map(|l| {
+                                                let mut spans = vec![Span::styled("  ", Style::default())];
+                                                spans.extend(l.spans);
+                                                Line::from(spans)
+                                            }),
+                                    );
+                                    out
+                                });
                             blocks.push(Block { key, lines });
                         } else {
                             blocks.push(Block {

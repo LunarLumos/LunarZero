@@ -89,6 +89,74 @@ pub struct Need {
     pub user_text: String,
 }
 
+/// What the prompt asks for, derived from `user_text` (used by `auto`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Task {
+    /// greetings, one-liners, quick lookups → fastest model
+    Chat,
+    /// edits, features, multi-file work with tools → high quality + tools
+    Coding,
+    /// "why / analyze / design / prove / compare" → prefer reasoning models
+    Reasoning,
+    /// big prompts → context-first
+    LongContext,
+}
+
+pub fn task_of(need: &Need) -> Task {
+    let t = need.user_text.to_lowercase();
+    let words = |list: &[&str]| list.iter().any(|w| t.contains(w));
+    if need.tokens > 24_000 {
+        return Task::LongContext;
+    }
+    if words(&[
+        "why",
+        "analyze",
+        "analyse",
+        "design",
+        "architect",
+        "prove",
+        "compare",
+        "trade-off",
+        "tradeoff",
+        "plan ",
+        "reason",
+        "in depth",
+        "root cause",
+        "strategy",
+        "evaluate",
+    ]) {
+        return Task::Reasoning;
+    }
+    if words(&[
+        "implement",
+        "refactor",
+        "fix",
+        "debug",
+        "add ",
+        "create",
+        "write",
+        "build",
+        "migrate",
+        "optimize",
+        "test",
+        "edit",
+        "change",
+        "update",
+        "remove",
+        "rename",
+        "install",
+        "deploy",
+        "review",
+    ]) || t.contains('`')
+    {
+        return Task::Coding;
+    }
+    if t.chars().count() < 160 {
+        return Task::Chat;
+    }
+    Task::Coding
+}
+
 #[derive(Debug, Clone)]
 pub struct Pick {
     pub model: Model,
@@ -395,7 +463,15 @@ impl Router {
                 None => f.speed as f64 / 100.0,
             };
             let failures = usage.map(|u| u.failures).unwrap_or(0) as f64;
-            let score = w_int * intelligence + w_speed * speed + w_head * headroom - 0.05 * failures;
+            // task-specific nudges: thinking models for reasoning work, big
+            // windows for long prompts, nothing slow for a quick chat
+            let nudge = match task_of(need) {
+                Task::Reasoning if m.reasoning => 0.10,
+                Task::Chat if m.reasoning => -0.05,
+                Task::LongContext => (m.limit.context / 1_048_576.0).min(1.0) * 0.10,
+                _ => 0.0,
+            };
+            let score = w_int * intelligence + w_speed * speed + w_head * headroom - 0.05 * failures + nudge;
             if best.is_none_or(|(s, _)| score > s) {
                 best = Some((score, m));
             }
@@ -408,9 +484,15 @@ impl Router {
                 .unwrap()
                 .insert(session_id.to_string(), (key, now + sticky_minutes * MINUTE));
         }
+        let task = match task_of(need) {
+            Task::Chat => "chat",
+            Task::Coding => "coding",
+            Task::Reasoning => "reasoning",
+            Task::LongContext => "long-context",
+        };
         Some(Pick {
             model: m.clone(),
-            reason: effective.name().into(),
+            reason: format!("{} for {task}", effective.name()),
         })
     }
 
@@ -470,37 +552,10 @@ impl Router {
 /// The `auto` strategy: agentic/coding work with tools or big prompts wants
 /// the smartest model; short chat wants the fastest; everything else balances.
 fn classify(need: &Need) -> Strategy {
-    let text = need.user_text.to_lowercase();
-    let long = need.tokens > 24_000;
-    let quick_words = [
-        "quick",
-        "briefly",
-        "one word",
-        "yes or no",
-        "tl;dr",
-        "short answer",
-    ];
-    let hard_words = [
-        "refactor",
-        "implement",
-        "debug",
-        "architecture",
-        "design",
-        "prove",
-        "analyze",
-        "analyse",
-        "migrate",
-        "optimize",
-        "security",
-        "review",
-    ];
-    if need.tools || long || hard_words.iter().any(|w| text.contains(w)) {
-        return Strategy::Smart;
+    match task_of(need) {
+        Task::Chat => Strategy::Fast,
+        Task::Coding | Task::Reasoning | Task::LongContext => Strategy::Smart,
     }
-    if text.chars().count() < 160 || quick_words.iter().any(|w| text.contains(w)) {
-        return Strategy::Fast;
-    }
-    Strategy::Auto
 }
 
 #[cfg(test)]

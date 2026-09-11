@@ -268,7 +268,14 @@ impl Engine {
                 }),
             ));
         }
-        if model.pool.is_some() && fallback {
+        let pool_connected = self
+            .registry()
+            .providers
+            .get(pool::PROVIDER)
+            .is_some_and(|p| p.connected());
+        // pool members fail over inside the pool; any other model is rescued by
+        // the pool when it fails hard (pool.rescue, default on)
+        if fallback && (model.pool.is_some() || (pool_connected && pool.rescue.unwrap_or(true))) {
             return Ok((
                 model.clone(),
                 Some(crate::session::processor::RouteInput {
@@ -483,7 +490,10 @@ impl Engine {
         lines.push("</mcp_instructions>".into());
         Some(lines.join("\n"))
     }
-    pub async fn skills_prompt(&self, agent: &crate::agent::Agent) -> Option<String> {
+    /// Skills block for the system prompt. With `smart.skills` (default) only
+    /// the skills relevant to the prompt are described (others by name), and
+    /// a clearly matching skill is attached in full so no tool call is needed.
+    pub async fn skills_prompt(&self, agent: &crate::agent::Agent, user_text: &str) -> Option<String> {
         if crate::permission::evaluate("skill", "*", &[&agent.permission]).action
             == lz_schema::permission::Action::Deny
         {
@@ -494,7 +504,48 @@ impl Engine {
         if list.is_empty() {
             return None;
         }
-        Some(crate::skill::format(&list, false))
+        let smart = self.config().smart.clone().unwrap_or_default();
+        if !smart.skills.unwrap_or(true) || user_text.trim().is_empty() {
+            return Some(crate::skill::format(&list, false));
+        }
+        let ranked = crate::skill::rank(&list, user_text);
+        let relevant: Vec<&crate::skill::Skill> = ranked
+            .iter()
+            .filter(|(s, _)| *s > 0.0)
+            .take(5)
+            .map(|(_, s)| *s)
+            .collect();
+        let mut out = String::new();
+        if relevant.is_empty() {
+            let names: Vec<&str> = list.iter().map(|s| s.name.as_str()).collect();
+            out.push_str(&format!(
+                "Skills available via the skill tool: {}",
+                names.join(", ")
+            ));
+        } else {
+            out.push_str(&crate::skill::format(&relevant, false));
+            let others: Vec<&str> = list
+                .iter()
+                .filter(|s| !relevant.iter().any(|r| r.name == s.name))
+                .map(|s| s.name.as_str())
+                .collect();
+            if !others.is_empty() {
+                out.push_str(&format!("\nOther skills: {}", others.join(", ")));
+            }
+            // attach a strong match so the model does not have to load it
+            if smart.attach_skill.unwrap_or(true)
+                && let Some((score, best)) = ranked.first()
+                && *score >= 0.55
+                && best.content.len() <= 6000
+            {
+                out.push_str(&format!(
+                    "\n<skill name=\"{}\">\n{}\n</skill>",
+                    best.name,
+                    best.content.trim()
+                ));
+            }
+        }
+        Some(out)
     }
     pub async fn snapshot_track(&self) -> Option<String> {
         self.snapshot.track().await
