@@ -1,0 +1,200 @@
+{"text": "evaluate whether the heal loop can spin forever and how to bound it", "tokens": 1903, "label": "reasoning"}
+{"text": "why is the memory usage growing even though we free the buffers?", "tokens": 4622, "label": "reasoning"}
+{"text": "why would a formatter run make the diff bigger, and how to avoid it", "tokens": 6371, "label": "reasoning"}
+{"text": "go through all these test failures (pasted) and group them by cause", "tokens": 69653, "label": "long-context"}
+{"text": "what's the difference between npm and pnpm", "tokens": 1527, "label": "chat"}
+{"text": "reason about whether the compaction threshold is too aggressive", "tokens": 10078, "label": "reasoning"}
+{"text": "split the 2000-line file into modules", "tokens": 8934, "label": "coding"}
+{"text": "what does HTTP 429 mean?", "tokens": 596, "label": "chat"}
+{"text": "implement the `symbol` tool in tool/builtins", "tokens": 5509, "label": "coding"}
+{"text": "how do you pronounce nginx", "tokens": 2016, "label": "chat"}
+{"text": "convert this callback code to async/await", "tokens": 1864, "label": "coding"}
+{"text": "bump the dependency versions and fix breakages", "tokens": 11755, "label": "coding"}
+{"text": "what does the L in SOLID stand for", "tokens": 1143, "label": "chat"}
+{"text": "implement pagination for the /users endpoint", "tokens": 7650, "label": "coding"}
+{"text": "add input validation to the signup form", "tokens": 6623, "label": "coding"}
+{"text": "what's the best way to model money in this codebase and why", "tokens": 10452, "label": "reasoning"}
+{"text": "good morning", "tokens": 537, "label": "chat"}
+{"text": "what's the root cause of the flaky test in CI?", "tokens": 11985, "label": "reasoning"}
+{"text": "upgrade to next 15 and fix the app router changes", "tokens": 5352, "label": "coding"}
+{"text": "why does tokio panic with 'cannot block on the current runtime' here?", "tokens": 5419, "label": "reasoning"}
+{"text": "write a github actions workflow that runs the tests", "tokens": 4856, "label": "coding"}
+{"text": "update the model catalog and regenerate pool.json", "tokens": 7319, "label": "coding"}
+{"text": "edit the config so logging goes to stderr", "tokens": 8937, "label": "coding"}
+{"text": "give me a one-line summary of what a mutex is", "tokens": 782, "label": "chat"}
+{"text": "rename the `foo` function to `parse_header` everywhere", "tokens": 3290, "label": "coding"}
+{"text": "compare three approaches to rate limiting and their failure modes", "tokens": 997, "label": "reasoning"}
+{"text": "analyze the cost of the current token usage per turn and where it goes", "tokens": 10918, "label": "reasoning"}
+{"text": "translate 'hello world' to french", "tokens": 2012, "label": "chat"}
+{"text": "refactor UserService to use dependency injection", "tokens": 3502, "label": "coding"}
+{"text": "summarise the pasted 200 support tickets into themes", "tokens": 121066, "label": "long-context"}
+{"text": "write an integration test for the checkout flow", "tokens": 3043, "label": "coding"}
+{"text": "explain the architecture of this repo and where the boundaries are wrong", "tokens": 3278, "label": "reasoning"}
+{"text": "prove the id generator can't produce duplicates within a millisecond", "tokens": 10642, "label": "reasoning"}
+{"text": "what's the difference between tcp and udp", "tokens": 652, "label": "chat"}
+{"text": "what year was python released", "tokens": 586, "label": "chat"}
+{"text": "how long is a jwt valid by default", "tokens": 2051, "label": "chat"}
+{"text": "does go have generics", "tokens": 2156, "label": "chat"}
+{"text": "read the entire package-lock and tell me which packages are duplicated", "tokens": 125318, "label": "long-context"}
+{"text": "what does it mean when a test is flaky", "tokens": 1781, "label": "chat"}
+{"text": "what are the consequences of switching from mutexes to channels in this module?", "tokens": 3186, "label": "reasoning"}
+{"text": "install the prettier config and run it on src/", "tokens": 5940, "label": "coding"}
+{"text": "fix the off-by-one in the pagination logic", "tokens": 7205, "label": "coding"}
+{"text": "add dark mode toggle to the settings page", "tokens": 2919, "label": "coding"}
+{"text": "take the full build log and explain each warning", "tokens": 154295, "label": "long-context"}
+{"text": "how are you", "tokens": 1069, "label": "chat"}
+{"text": "remove the unused imports in main.py", "tokens": 1442, "label": "coding"}
+{"text": "what's the shortcut to comment a line in vscode", "tokens": 544, "label": "chat"}
+{"text": "deploy the app to fly.io", "tokens": 6372, "label": "coding"}
+{"text": "remove the feature flag `new_checkout` now that it's default", "tokens": 3525, "label": "coding"}
+{"text": "what's a sensible default timeout for an http request", "tokens": 2451, "label": "chat"}
+{"text": "review this design doc and point out the risks", "tokens": 4600, "label": "reasoning"}
+{"text": "compare the free-tier limits of these providers and pick a default order", "tokens": 13872, "label": "reasoning"}
+{"text": "how would you architect a plugin system for this CLI?", "tokens": 11530, "label": "reasoning"}
+{"text": "is 0.1 + 0.2 == 0.3 in javascript?", "tokens": 557, "label": "chat"}
+{"text": "add a `Makefile` with build/test/lint targets", "tokens": 9802, "label": "coding"}
+{"text": "which consistency model do we actually need for the comments feature?", "tokens": 10791, "label": "reasoning"}
+{"text": "what does 'chmod 600' do", "tokens": 1486, "label": "chat"}
+{"text": "add a retry with backoff around the network call", "tokens": 5222, "label": "coding"}
+{"text": "here are all our migrations, verify they apply cleanly in order", "tokens": 68941, "label": "long-context"}
+{"text": "generate the openapi spec from the routes", "tokens": 8364, "label": "coding"}
+{"text": "optimize the loop in compute_totals, it's O(n^2)", "tokens": 10188, "label": "coding"}
+{"text": "ok", "tokens": 2378, "label": "chat"}
+{"text": "what does npx do", "tokens": 722, "label": "chat"}
+{"text": "compare tree-sitter and LSP for symbol indexing and recommend", "tokens": 2856, "label": "reasoning"}
+{"text": "create a `.env.example` from the current env usage", "tokens": 7853, "label": "coding"}
+{"text": "the tests are failing after my change, find the bug", "tokens": 11961, "label": "coding"}
+{"text": "which testing strategy gives the most confidence for the router?", "tokens": 7336, "label": "reasoning"}
+{"text": "what time zone is UTC", "tokens": 2207, "label": "chat"}
+{"text": "what's the failure mode if the queue consumer crashes mid-batch?", "tokens": 12113, "label": "reasoning"}
+{"text": "design a rollout plan for the new pricing with a safe rollback", "tokens": 7664, "label": "reasoning"}
+{"text": "does sqlite support concurrent writes", "tokens": 1529, "label": "chat"}
+{"text": "migrate the database schema to add a `deleted_at` column", "tokens": 11748, "label": "coding"}
+{"text": "quick question: does JSON allow comments", "tokens": 1040, "label": "chat"}
+{"text": "analyze the attached 50k-line diff for breaking changes", "tokens": 56598, "label": "long-context"}
+{"text": "what's the right granularity for permission patterns and why", "tokens": 4220, "label": "reasoning"}
+{"text": "write a unit test for parse_config", "tokens": 6404, "label": "coding"}
+{"text": "here is the full log from the last 3 hours, find where it went wrong", "tokens": 43782, "label": "long-context"}
+{"text": "implement rate limiting middleware for express", "tokens": 1926, "label": "coding"}
+{"text": "what is the max value of a u32", "tokens": 1563, "label": "chat"}
+{"text": "fix: `TypeError: cannot read properties of undefined` in App.tsx", "tokens": 1765, "label": "coding"}
+{"text": "how do I list files in linux", "tokens": 845, "label": "chat"}
+{"text": "what is idempotency", "tokens": 503, "label": "chat"}
+{"text": "read all these pull request descriptions and write release notes", "tokens": 157944, "label": "long-context"}
+{"text": "is postgres free", "tokens": 671, "label": "chat"}
+{"text": "index this whole repository listing and tell me what each module does", "tokens": 84513, "label": "long-context"}
+{"text": "how many bytes in a kilobyte", "tokens": 2076, "label": "chat"}
+{"text": "prove that this sorting function terminates", "tokens": 3272, "label": "reasoning"}
+{"text": "hello there", "tokens": 917, "label": "chat"}
+{"text": "thanks!", "tokens": 1917, "label": "chat"}
+{"text": "port this bash script to python", "tokens": 4375, "label": "coding"}
+{"text": "evaluate whether we should move from REST to gRPC", "tokens": 7033, "label": "reasoning"}
+{"text": "debug why the login form submits twice", "tokens": 2071, "label": "coding"}
+{"text": "why would the cache hit rate drop after the deploy?", "tokens": 9558, "label": "reasoning"}
+{"text": "what's the difference between a process and a thread", "tokens": 1586, "label": "chat"}
+{"text": "why might sandbox-exec profiles fail to match symlinked paths?", "tokens": 7228, "label": "reasoning"}
+{"text": "add a --json flag to the export command", "tokens": 2734, "label": "coding"}
+{"text": "plan how to add windows support without forking the codebase", "tokens": 8019, "label": "reasoning"}
+{"text": "add type hints to utils.py", "tokens": 10301, "label": "coding"}
+{"text": "can you hear me", "tokens": 2038, "label": "chat"}
+{"text": "make `cargo clippy` pass", "tokens": 8567, "label": "coding"}
+{"text": "add logging around the payment flow", "tokens": 2120, "label": "coding"}
+{"text": "build a CLI that converts csv to json", "tokens": 6537, "label": "coding"}
+{"text": "yes please", "tokens": 542, "label": "chat"}
+{"text": "what's the time complexity of binary search?", "tokens": 497, "label": "chat"}
+{"text": "what does the acronym CRUD stand for", "tokens": 1285, "label": "chat"}
+{"text": "should we use an event-sourced design for orders? argue both sides", "tokens": 3687, "label": "reasoning"}
+{"text": "assess the security of the current auth flow", "tokens": 867, "label": "reasoning"}
+{"text": "compare postgres and sqlite for this project and recommend one", "tokens": 12373, "label": "reasoning"}
+{"text": "what does `git stash` do?", "tokens": 1179, "label": "chat"}
+{"text": "add a health check endpoint", "tokens": 6485, "label": "coding"}
+{"text": "what's the tradeoff between a bigger context window and compaction here?", "tokens": 11878, "label": "reasoning"}
+{"text": "what's a good git commit message style", "tokens": 599, "label": "chat"}
+{"text": "why does the app feel slower after enabling the LSP?", "tokens": 7257, "label": "reasoning"}
+{"text": "summarize this 400-page spec and list the requirements that affect us", "tokens": 56838, "label": "long-context"}
+{"text": "design the api for the new billing service", "tokens": 1684, "label": "reasoning"}
+{"text": "who maintains tokio?", "tokens": 453, "label": "chat"}
+{"text": "analyze this stack trace and tell me the likely cause", "tokens": 11192, "label": "reasoning"}
+{"text": "fix the typo in the error message on line 42", "tokens": 2333, "label": "coding"}
+{"text": "add a unit test that covers the empty-input case", "tokens": 2718, "label": "coding"}
+{"text": "what does the -p flag do in mkdir", "tokens": 2327, "label": "chat"}
+{"text": "which is faster, grep or ripgrep", "tokens": 553, "label": "chat"}
+{"text": "make the dev server reload on file changes", "tokens": 8159, "label": "coding"}
+{"text": "is the sticky routing rule justified? what could go wrong?", "tokens": 8281, "label": "reasoning"}
+{"text": "define latency vs throughput", "tokens": 1205, "label": "chat"}
+{"text": "fix the memory leak in the websocket handler", "tokens": 1169, "label": "coding"}
+{"text": "why does the build take 12 minutes and what's the biggest lever?", "tokens": 9245, "label": "reasoning"}
+{"text": "replace the deprecated API with the new one", "tokens": 10809, "label": "coding"}
+{"text": "make the build reproducible", "tokens": 3553, "label": "coding"}
+{"text": "what's the capital of france", "tokens": 890, "label": "chat"}
+{"text": "below is our entire config across environments, find drift", "tokens": 125463, "label": "long-context"}
+{"text": "evaluate the risk of upgrading to postgres 16 for us", "tokens": 6849, "label": "reasoning"}
+{"text": "here is every route handler in the app, check them for missing auth", "tokens": 36684, "label": "long-context"}
+{"text": "hi", "tokens": 1626, "label": "chat"}
+{"text": "here are all the locale files, find untranslated keys", "tokens": 62202, "label": "long-context"}
+{"text": "here's the entire conversation export, extract action items", "tokens": 178578, "label": "long-context"}
+{"text": "add a `--verbose` option that prints timings", "tokens": 1794, "label": "coding"}
+{"text": "cool, got it", "tokens": 1036, "label": "chat"}
+{"text": "in depth: how does the router pick a model and where is the logic weak?", "tokens": 6020, "label": "reasoning"}
+{"text": "what's wrong with this data model for the audit log?", "tokens": 11950, "label": "reasoning"}
+{"text": "review these 30 files for consistency in error handling", "tokens": 96127, "label": "long-context"}
+{"text": "can rust compile to wasm", "tokens": 1706, "label": "chat"}
+{"text": "no thanks", "tokens": 807, "label": "chat"}
+{"text": "what's the architecture for background subagents that won't leak sessions?", "tokens": 7360, "label": "reasoning"}
+{"text": "extract the duplicated code in handlers.rs into a helper", "tokens": 10269, "label": "coding"}
+{"text": "implement `from_str` for `Duration`", "tokens": 7380, "label": "coding"}
+{"text": "write the migration for the orders table", "tokens": 11402, "label": "coding"}
+{"text": "root cause: users report double charges on retry", "tokens": 13579, "label": "reasoning"}
+{"text": "why is the sidebar percentage wrong when the model changes?", "tokens": 3922, "label": "reasoning"}
+{"text": "why does the request time out only under load?", "tokens": 5361, "label": "reasoning"}
+{"text": "add error handling to fetch_user", "tokens": 9943, "label": "coding"}
+{"text": "should the permission engine be last-match-wins or most-specific-wins? argue it", "tokens": 14877, "label": "reasoning"}
+{"text": "is rust memory safe?", "tokens": 1797, "label": "chat"}
+{"text": "should we cache prompt prefixes and what's the payoff?", "tokens": 8689, "label": "reasoning"}
+{"text": "plan the migration from the monolith to services, step by step", "tokens": 4580, "label": "reasoning"}
+{"text": "compare bwrap and landlock for the install sandbox", "tokens": 1819, "label": "reasoning"}
+{"text": "what's your name", "tokens": 1299, "label": "chat"}
+{"text": "which port does postgres use", "tokens": 1479, "label": "chat"}
+{"text": "hook up prisma and create the User model", "tokens": 8888, "label": "coding"}
+{"text": "fix the failing test in src/parser.rs", "tokens": 9187, "label": "coding"}
+{"text": "what is an ORM", "tokens": 1317, "label": "chat"}
+{"text": "explain why the tests pass locally but fail in ci, hypotheses first", "tokens": 12920, "label": "reasoning"}
+{"text": "design an eval for the routing classifier", "tokens": 2496, "label": "reasoning"}
+{"text": "evaluate the option of vendoring the dependency vs pinning it", "tokens": 9963, "label": "reasoning"}
+{"text": "create a new React component `UserCard` with props name and avatar", "tokens": 11681, "label": "coding"}
+{"text": "which caching strategy fits a read-heavy workload with rare writes, and why?", "tokens": 2159, "label": "reasoning"}
+{"text": "think through the concurrency model: where can deadlocks happen?", "tokens": 3787, "label": "reasoning"}
+{"text": "is our retry strategy sound under partial failures? reason it through", "tokens": 14416, "label": "reasoning"}
+{"text": "what is the meaning of 'idiomatic'", "tokens": 2138, "label": "chat"}
+{"text": "add caching to the get_profile endpoint", "tokens": 8101, "label": "coding"}
+{"text": "what does LGTM mean", "tokens": 2477, "label": "chat"}
+{"text": "implement `Display` for `Error`", "tokens": 7120, "label": "coding"}
+{"text": "this is the full database schema plus all queries, find the missing indexes", "tokens": 170671, "label": "long-context"}
+{"text": "create a Dockerfile for this app", "tokens": 8811, "label": "coding"}
+{"text": "what does TTFT mean", "tokens": 1924, "label": "chat"}
+{"text": "think about how compaction should treat tool outputs from skills", "tokens": 7321, "label": "reasoning"}
+{"text": "change the default port to 8080", "tokens": 10538, "label": "coding"}
+{"text": "review the whole codebase dump below and list the security issues", "tokens": 30061, "label": "long-context"}
+{"text": "what is a monad in one sentence", "tokens": 685, "label": "chat"}
+{"text": "give me a strategy for reducing p99 latency without adding hardware", "tokens": 5104, "label": "reasoning"}
+{"text": "compare keychain storage vs a 0600 file, security-wise", "tokens": 3459, "label": "reasoning"}
+{"text": "what does semver mean", "tokens": 699, "label": "chat"}
+{"text": "wire up the new route in the router", "tokens": 5462, "label": "coding"}
+{"text": "how should we structure permissions so that plugins can't escalate?", "tokens": 8745, "label": "reasoning"}
+{"text": "what's the difference between == and === in js", "tokens": 635, "label": "chat"}
+{"text": "how do I exit vim?", "tokens": 2494, "label": "chat"}
+{"text": "what would break if we made the user id a uuid instead of an int?", "tokens": 11589, "label": "reasoning"}
+{"text": "what is a race condition", "tokens": 2333, "label": "chat"}
+{"text": "design the state machine for provider failover", "tokens": 2601, "label": "reasoning"}
+{"text": "this is the complete openapi spec; find endpoints without examples", "tokens": 60239, "label": "long-context"}
+{"text": "update the README with the new install steps", "tokens": 7709, "label": "coding"}
+{"text": "given the complete api docs below, generate typed client bindings", "tokens": 48432, "label": "long-context"}
+{"text": "set up eslint and fix the warnings", "tokens": 5872, "label": "coding"}
+{"text": "the full transcript of the incident is below \u2014 write the postmortem", "tokens": 128626, "label": "long-context"}
+{"text": "what's the default port for redis", "tokens": 490, "label": "chat"}
+{"text": "tell me a programming joke", "tokens": 1825, "label": "chat"}
+{"text": "what's a good name for a cache module", "tokens": 1214, "label": "chat"}
+{"text": "write a script that renames all .jpeg files to .jpg", "tokens": 8274, "label": "coding"}
+{"text": "analyze the trade-offs of using websockets vs sse here", "tokens": 6678, "label": "reasoning"}
+{"text": "design the schema for a multi-tenant billing system", "tokens": 7604, "label": "reasoning"}
+{"text": "fix clippy warnings in crates/lz-core", "tokens": 9814, "label": "coding"}

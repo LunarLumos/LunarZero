@@ -2244,6 +2244,7 @@ dependencies = [
  "futures",
  "inquire",
  "jiff",
+ "libc",
  "lz-core",
  "lz-schema",
  "lz-tui",

@@ -200,6 +200,16 @@ pub enum PoolCommand {
     },
     /// Today's usage and cooldowns per pool model
     Status,
+    /// Why a model is (not) being picked right now: limits, cooldown, last error, scores
+    Why {
+        /// `provider/model`
+        model: String,
+    },
+    /// Score the prompt→task classifier on assets/eval/routing.jsonl
+    Eval,
+    /// Last 24 h across the pool: requests, tokens, failovers, and what the same
+    /// tokens would have cost at the providers' list prices
+    Report,
 }
 
 #[derive(Subcommand, Debug)]

@@ -14,7 +14,10 @@ use crate::commands::config::resolve_dir;
 
 pub async fn exec(args: RunArgs) -> anyhow::Result<i32> {
     let mut message = args.message.join(" ");
-    if !std::io::stdin().is_terminal() {
+    // Piped input is appended — but only when something is actually there:
+    // an inherited pipe that nobody writes to (CI runners, agents, IDE
+    // terminals) must not block the run forever.
+    if !std::io::stdin().is_terminal() && stdin_ready(std::time::Duration::from_millis(300)) {
         let mut piped = String::new();
         std::io::stdin().read_to_string(&mut piped)?;
         if !piped.trim().is_empty() {
@@ -267,6 +270,27 @@ async fn print_events(
                 _ => {}
             },
         }
+    }
+}
+
+/// Whether stdin has data (or EOF) within `wait`; `true` on platforms
+/// without `poll` so behaviour stays unchanged there.
+fn stdin_ready(wait: std::time::Duration) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        let mut pfd = libc::pollfd {
+            fd: std::io::stdin().as_raw_fd(),
+            events: libc::POLLIN | libc::POLLHUP,
+            revents: 0,
+        };
+        let r = unsafe { libc::poll(&mut pfd, 1, wait.as_millis() as i32) };
+        r > 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = wait;
+        true
     }
 }
 

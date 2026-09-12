@@ -84,9 +84,20 @@ Every pool model carries a computed **quality** score (size, what the same model
 - **Rescue** — a paid or local model that fails hard is rescued by the pool instead of erroring.
 
 ```sh
-lz pool setup    # every pool provider, signup URL, env var, and which ones have keys
-lz pool status   # per-model RPM/RPD/TPM/TPD usage, measured latency, cooldowns
+lz pool setup            # every pool provider, signup URL, env var, and which ones have keys
+lz pool status           # per-model RPM/RPD/TPM/TPD usage, measured latency, cooldowns
+lz pool why groq/qwen3   # exactly why a model is or isn't picked: limits, cooldown, last error
+lz pool report           # last 24 h: requests, tokens, models — and what it would have cost at list price
+lz pool eval             # routing classifier accuracy on the labelled prompt set
 ```
+
+**Policy.** Preferences beyond the scores, in `pool.policy`: `prefer` (`["ollama/*", "groq/*"]`,
+most preferred first), `avoid` (used only when nothing else is available), `optimize`
+(`balanced` | `quality` | `speed` | `latency` — the last one weighs measured time-to-first-token),
+and `local_first: true` to route to a running Ollama/LM Studio before any cloud model.
+
+Measured numbers — failover latency, routing accuracy, request overhead, real free-tier usage —
+are in [BENCHMARKS.md](BENCHMARKS.md), with the scripts that produce them.
 
 ## Web portal
 
@@ -175,7 +186,7 @@ A native tree-sitter index (Rust, Python, JavaScript/TypeScript, Go) is built in
 | `lz [project] [-m model] [-c] [-s id] [--agent name] [--mode m] [--auto]` | TUI |
 | `lz run [message..] [--format text\|json] [-c] [--model] [--auto]` | non-interactive, NDJSON with `--format json` |
 | `lz setup` · `lz auth list\|login [--keychain]\|logout\|migrate` | connect providers |
-| `lz pool setup\|list\|status` | the free pool |
+| `lz pool setup\|list\|status\|why\|report\|eval` | the free pool |
 | `lz models [provider]` · `lz agent list\|create` · `lz index [name]` | models, agents, symbol index |
 | `lz skill list\|install\|remove\|update` · `lz mcp list\|install\|add` · `lz recommend` | skills & MCP |
 | `lz web [--port 7411]` | portal on its own |

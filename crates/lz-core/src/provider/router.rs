@@ -57,6 +57,12 @@ impl Usage {
             self.toks.pop_front();
         }
     }
+    fn ttft_ms(&self) -> Option<u64> {
+        (self.ttft_ms > 0.0).then_some(self.ttft_ms as u64)
+    }
+    fn tps(&self) -> Option<u64> {
+        (self.tps > 0.0).then_some(self.tps as u64)
+    }
     fn count_since(&self, since: u64) -> u64 {
         self.reqs.iter().rev().take_while(|t| **t >= since).count() as u64
     }
@@ -102,65 +108,358 @@ pub enum Task {
     LongContext,
 }
 
+/// Classify a prompt. Scored, word-boundary features rather than substring
+/// hits: imperative code verbs (weighted by position) vote for coding,
+/// deliberation phrases for reasoning, short question forms for chat, and
+/// the estimated prompt size decides long-context. Accuracy is measured on
+/// `assets/eval/routing.jsonl` (`lz pool eval`, and a unit test).
 pub fn task_of(need: &Need) -> Task {
-    let t = need.user_text.to_lowercase();
-    let words = |list: &[&str]| list.iter().any(|w| t.contains(w));
     if need.tokens > 24_000 {
         return Task::LongContext;
     }
-    if words(&[
-        "why",
-        "analyze",
-        "analyse",
-        "design",
-        "architect",
-        "prove",
-        "compare",
-        "trade-off",
-        "tradeoff",
-        "plan ",
-        "reason",
-        "in depth",
-        "root cause",
-        "strategy",
-        "evaluate",
-    ]) {
-        return Task::Reasoning;
-    }
-    if words(&[
+    let raw = need.user_text.trim();
+    let lower = raw.to_lowercase();
+    // tokens with punctuation stripped, so "writes" ≠ "write" and "why?" = "why"
+    let words: Vec<String> = lower
+        .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '\''))
+        .filter(|w| !w.is_empty())
+        .map(|w| w.trim_matches('\'').to_string())
+        .collect();
+    let padded = format!(" {} ", words.join(" "));
+    let has = |phrase: &str| padded.contains(&format!(" {phrase} "));
+    let n = words.len();
+
+    const CODE_VERBS: &[&str] = &[
         "implement",
         "refactor",
         "fix",
         "debug",
-        "add ",
+        "add",
         "create",
         "write",
         "build",
         "migrate",
         "optimize",
-        "test",
+        "optimise",
         "edit",
         "change",
         "update",
         "remove",
+        "delete",
         "rename",
         "install",
         "deploy",
-        "review",
-    ]) || t.contains('`')
-    {
+        "split",
+        "convert",
+        "port",
+        "generate",
+        "extract",
+        "wire",
+        "replace",
+        "make",
+        "bump",
+        "upgrade",
+        "hook",
+        "set",
+        "run",
+        "configure",
+        "integrate",
+        "move",
+        "merge",
+        "revert",
+        "format",
+        "lint",
+        "patch",
+        "resolve",
+        "handle",
+        "support",
+        "expose",
+        "enable",
+        "disable",
+        "connect",
+        "scaffold",
+        "bootstrap",
+    ];
+    const REASON_WORDS: &[&str] = &[
+        "why",
+        "analyze",
+        "analyse",
+        "analysis",
+        "design",
+        "architect",
+        "architecture",
+        "prove",
+        "compare",
+        "trade-off",
+        "trade-offs",
+        "tradeoff",
+        "tradeoffs",
+        "reason",
+        "strategy",
+        "evaluate",
+        "assess",
+        "argue",
+        "consequences",
+        "justified",
+        "risk",
+        "risks",
+        "hypotheses",
+        "postmortem",
+        "decide",
+        "recommend",
+        "recommendation",
+        "consistency",
+        "sound",
+        "wrong",
+        "weak",
+        "lever",
+        "granularity",
+    ];
+    const REASON_PHRASES: &[&str] = &[
+        "root cause",
+        "in depth",
+        "failure mode",
+        "failure modes",
+        "what would break",
+        "what's wrong",
+        "whats wrong",
+        "should we",
+        "should the",
+        "should i",
+        "think through",
+        "think about",
+        "how should",
+        "how would you",
+        "best way",
+        "what's the right",
+        "which do",
+        "which is better",
+        "plan the",
+        "plan how",
+        "plan for",
+        "point out",
+        "where can",
+        "what could go wrong",
+        "and why",
+        "or not",
+        "both sides",
+        "step by step",
+        "review this design",
+        "review this plan",
+        "explain why",
+        "explain the architecture",
+    ];
+    const CHAT_OPENERS: &[&str] = &[
+        "what is",
+        "what's",
+        "whats",
+        "what does",
+        "what are",
+        "what do",
+        "what year",
+        "what time",
+        "who",
+        "how do i",
+        "how do you",
+        "how many",
+        "how long",
+        "does",
+        "is",
+        "are",
+        "can",
+        "which is",
+        "define",
+        "translate",
+        "tell me",
+        "give me a one-line",
+        "quick question",
+        "hi",
+        "hello",
+        "hey",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+        "yes",
+        "no",
+        "cool",
+        "good",
+        "what's your",
+        "how are",
+    ];
+
+    let mut coding: i32 = 0;
+    let mut reasoning: i32 = 0;
+    for (i, w) in words.iter().enumerate() {
+        if CODE_VERBS.contains(&w.as_str()) {
+            coding += if i < 2 { 3 } else { 1 };
+        }
+        if REASON_WORDS.contains(&w.as_str()) {
+            reasoning += if i < 3 { 3 } else { 2 };
+        }
+    }
+    for p in REASON_PHRASES {
+        if has(p) {
+            reasoning += 3;
+        }
+    }
+    // tests as a task, not the word "test" in a question
+    for p in [
+        "write a test",
+        "add a test",
+        "unit test",
+        "integration test",
+        "the tests",
+        "tests are",
+        "run the tests",
+        "write tests",
+        "add tests",
+        "fix the test",
+        "failing test",
+        "failing tests",
+    ] {
+        if has(p) {
+            coding += 2;
+        }
+    }
+    // code-shaped text: paths, extensions, identifiers, error names, fences
+    let code_shape = raw.contains('`')
+        || raw.contains("```")
+        || lower.contains("src/")
+        || lower.contains(".rs")
+        || lower.contains(".py")
+        || lower.contains(".ts")
+        || lower.contains(".js")
+        || lower.contains(".tsx")
+        || lower.contains(".json")
+        || lower.contains("error:")
+        || lower.contains("typeerror")
+        || lower.contains("exception")
+        || lower.contains("panicked")
+        || lower.starts_with("fix:")
+        || words.iter().any(|w| w.contains('_') && w.len() > 4)
+        || raw.split_whitespace().any(|w| {
+            w.len() > 3
+                && w.chars().any(|c| c.is_ascii_uppercase())
+                && w.chars().any(|c| c.is_ascii_lowercase())
+                && w.chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_uppercase())
+                && w.chars().filter(|c| c.is_ascii_uppercase()).count() >= 1
+                && w.chars().skip(1).any(|c| c.is_ascii_uppercase())
+        });
+    if code_shape {
+        coding += 1;
+    }
+
+    let question = raw.ends_with('?') || CHAT_OPENERS.iter().any(|o| padded.starts_with(&format!(" {o} ")));
+    let short = n <= 12;
+    // a short question with no work verb is chat, even when it names a tool in backticks
+    if question && short && coding <= 1 && reasoning == 0 {
+        return Task::Chat;
+    }
+    if reasoning > 0 && reasoning >= coding {
+        return Task::Reasoning;
+    }
+    if coding > 0 {
         return Task::Coding;
     }
-    if t.chars().count() < 160 {
+    if n <= 3 || (short && question) {
+        return Task::Chat;
+    }
+    if raw.chars().count() < 160 && !question {
+        // a short statement without work verbs ("the app crashes at start") is still a task
+        return Task::Coding;
+    }
+    if raw.chars().count() < 160 {
         return Task::Chat;
     }
     Task::Coding
+}
+
+/// Router-side view of `pool.policy`.
+#[derive(Debug, Clone, Default)]
+pub struct Policy {
+    pub prefer: Vec<String>,
+    pub avoid: Vec<String>,
+    pub optimize: Optimize,
+    pub local_first: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Optimize {
+    #[default]
+    Balanced,
+    Quality,
+    Speed,
+    Latency,
+}
+
+impl Policy {
+    pub fn from_config(cfg: Option<&lz_schema::config::PoolPolicy>) -> Self {
+        let Some(c) = cfg else { return Self::default() };
+        Self {
+            prefer: c.prefer.clone().unwrap_or_default(),
+            avoid: c.avoid.clone().unwrap_or_default(),
+            optimize: match c.optimize.as_deref().unwrap_or("balanced") {
+                "quality" | "smart" => Optimize::Quality,
+                "speed" | "fast" => Optimize::Speed,
+                "latency" => Optimize::Latency,
+                _ => Optimize::Balanced,
+            },
+            local_first: c.local_first.unwrap_or(false),
+        }
+    }
+
+    fn matches(pattern: &str, model: &Model) -> bool {
+        let key = format!("{}/{}", model.provider_id, model.id);
+        pattern == key
+            || pattern == model.provider_id
+            || pattern.strip_suffix("/*").is_some_and(|p| p == model.provider_id)
+            || (pattern.ends_with('*') && key.starts_with(pattern.trim_end_matches('*')))
+    }
+
+    /// Score adjustment and a short label for the pick reason.
+    pub fn adjust(&self, model: &Model) -> (f64, Option<&'static str>) {
+        if let Some(rank) = self.prefer.iter().position(|p| Self::matches(p, model)) {
+            let boost = if rank == 0 { 0.25 } else { 0.15 };
+            return (boost, Some("preferred"));
+        }
+        if self.avoid.iter().any(|p| Self::matches(p, model)) {
+            return (-0.60, Some("avoided"));
+        }
+        if self.local_first && super::is_local(&model.base_url) {
+            return (0.40, Some("local first"));
+        }
+        (0.0, None)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Pick {
     pub model: Model,
     pub reason: String,
+}
+
+/// `lz pool why <provider/model>`.
+#[derive(Debug, Clone, Serialize)]
+pub struct WhyReport {
+    pub key: String,
+    pub in_pool: bool,
+    pub fits_request: bool,
+    /// (reason, ms until free) when the model cannot be used right now
+    pub blocked: Option<(String, Option<u64>)>,
+    pub quality: u32,
+    pub speed: u32,
+    pub rpm: (u64, Option<u64>),
+    pub rpd: (u64, Option<u64>),
+    pub tpm: (u64, Option<u64>),
+    pub tpd: (u64, Option<u64>),
+    pub failures: u32,
+    pub last_error: String,
+    pub ttft_ms: Option<u64>,
+    pub tps: Option<u64>,
+    pub provider_cooldown: Option<(u64, String)>,
 }
 
 /// Per-model status for `lz pool status` / the TUI.
@@ -537,6 +836,29 @@ impl Router {
         exclude: &[String],
         sticky_minutes: u64,
     ) -> Option<Pick> {
+        self.pick_with(
+            registry,
+            strategy,
+            need,
+            session_id,
+            exclude,
+            sticky_minutes,
+            &Policy::default(),
+        )
+    }
+
+    /// `pick` under a routing policy (`pool.policy`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick_with(
+        &self,
+        registry: &Registry,
+        strategy: Strategy,
+        need: &Need,
+        session_id: &str,
+        exclude: &[String],
+        sticky_minutes: u64,
+        policy: &Policy,
+    ) -> Option<Pick> {
         let now = now_ms();
         let mut l = self.ledger.lock().unwrap();
         let candidates: Vec<&Model> = self.candidates(registry, need, exclude);
@@ -572,12 +894,14 @@ impl Router {
             Strategy::Auto => classify(need),
             s => s,
         };
-        let (w_int, w_speed, w_head) = match effective {
-            Strategy::Smart => (0.75, 0.05, 0.20),
-            Strategy::Fast => (0.25, 0.55, 0.20),
-            Strategy::Auto => (0.50, 0.30, 0.20),
+        let (w_int, w_speed, w_head) = match (policy.optimize, effective) {
+            (Optimize::Quality, _) => (0.80, 0.05, 0.15),
+            (Optimize::Speed, _) | (Optimize::Latency, _) => (0.20, 0.60, 0.20),
+            (Optimize::Balanced, Strategy::Smart) => (0.75, 0.05, 0.20),
+            (Optimize::Balanced, Strategy::Fast) => (0.25, 0.55, 0.20),
+            (Optimize::Balanced, Strategy::Auto) => (0.50, 0.30, 0.20),
         };
-        let mut best: Option<(f64, &Model)> = None;
+        let mut best: Option<(f64, &Model, Option<&'static str>)> = None;
         for m in &candidates {
             let Ok(headroom) = self.available(&mut l, m, need.tokens, now) else {
                 continue;
@@ -599,12 +923,21 @@ impl Router {
                 Task::LongContext => (m.limit.context / 1_048_576.0).min(1.0) * 0.10,
                 _ => 0.0,
             };
-            let score = w_int * intelligence + w_speed * speed + w_head * headroom - 0.05 * failures + nudge;
-            if best.is_none_or(|(s, _)| score > s) {
-                best = Some((score, m));
+            // latency: weigh measured time-to-first-token directly when known
+            let latency_bonus = match (policy.optimize, usage.and_then(|u| u.ttft_ms())) {
+                (Optimize::Latency, Some(ttft)) => (1.0 - (ttft as f64 / 3_000.0).min(1.0)) * 0.30,
+                _ => 0.0,
+            };
+            let (policy_adj, tag) = policy.adjust(m);
+            let score = w_int * intelligence + w_speed * speed + w_head * headroom - 0.05 * failures
+                + nudge
+                + latency_bonus
+                + policy_adj;
+            if best.is_none_or(|(s, _, _)| score > s) {
+                best = Some((score, m, tag));
             }
         }
-        let (_, m) = best?;
+        let (_, m, tag) = best?;
         let key = Self::key(m);
         if sticky_minutes > 0 {
             self.sticky
@@ -620,7 +953,45 @@ impl Router {
         };
         Some(Pick {
             model: m.clone(),
-            reason: format!("{} for {task}", effective.name()),
+            reason: match tag {
+                Some(t) => format!("{} for {task} · {t}", effective.name()),
+                None => format!("{} for {task}", effective.name()),
+            },
+        })
+    }
+
+    /// Everything known about one pool model, for `lz pool why`.
+    pub fn why(&self, registry: &Registry, key: &str, need: &Need) -> Option<WhyReport> {
+        let (p, id) = key.split_once('/')?;
+        let model = registry.get(p, id)?;
+        let now = now_ms();
+        let mut l = self.ledger.lock().unwrap();
+        let blocked = self.blocked(&mut l, model, need.tokens, now);
+        let u = l.models.get(&Self::key(model)).cloned().unwrap_or_default();
+        let free = model.pool.clone();
+        Some(WhyReport {
+            key: key.to_string(),
+            in_pool: free.is_some(),
+            fits_request: self
+                .candidates(registry, need, &[])
+                .iter()
+                .any(|m| Self::key(m) == key),
+            blocked: blocked.map(|(why, until)| (why, until.map(|u| u.saturating_sub(now)))),
+            quality: free.as_ref().map(|f| f.quality).unwrap_or(0),
+            speed: free.as_ref().map(|f| f.speed).unwrap_or(0),
+            rpm: (u.count_since(now - MINUTE), free.as_ref().and_then(|f| f.rpm)),
+            rpd: (u.count_since(now - DAY), free.as_ref().and_then(|f| f.rpd)),
+            tpm: (u.tokens_since(now - MINUTE), free.as_ref().and_then(|f| f.tpm)),
+            tpd: (u.tokens_since(now - DAY), free.as_ref().and_then(|f| f.tpd)),
+            failures: u.failures,
+            last_error: u.last_error.clone(),
+            ttft_ms: u.ttft_ms(),
+            tps: u.tps(),
+            provider_cooldown: l
+                .providers
+                .get(&model.provider_id)
+                .filter(|(until, _)| *until > now)
+                .map(|(until, why)| (until.saturating_sub(now), why.clone())),
         })
     }
 
@@ -714,6 +1085,57 @@ fn classify(need: &Need) -> Strategy {
         Task::Chat => Strategy::Fast,
         Task::Coding | Task::Reasoning | Task::LongContext => Strategy::Smart,
     }
+}
+
+/// One labelled prompt of the routing eval set.
+pub struct EvalMiss {
+    pub text: String,
+    pub want: String,
+    pub got: String,
+}
+
+/// Accuracy of the task classifier on the labelled prompt set in
+/// `assets/eval/routing.jsonl` (overall and per class).
+pub fn routing_eval() -> (f64, Vec<(String, usize, usize)>, Vec<EvalMiss>) {
+    let data = include_str!("../../../../assets/eval/routing.jsonl");
+    let mut per: std::collections::BTreeMap<String, (usize, usize)> = Default::default();
+    let mut wrong = Vec::new();
+    let (mut ok, mut n) = (0usize, 0usize);
+    for line in data.lines().filter(|l| !l.trim().is_empty()) {
+        let v: serde_json::Value = serde_json::from_str(line).unwrap();
+        let text = v["text"].as_str().unwrap().to_string();
+        let label = v["label"].as_str().unwrap().to_string();
+        let need = Need {
+            tools: true,
+            vision: false,
+            tokens: v["tokens"].as_u64().unwrap_or(1000),
+            user_text: text.clone(),
+        };
+        let got = match task_of(&need) {
+            Task::Chat => "chat",
+            Task::Coding => "coding",
+            Task::Reasoning => "reasoning",
+            Task::LongContext => "long-context",
+        };
+        let e = per.entry(label.clone()).or_default();
+        e.1 += 1;
+        n += 1;
+        if got == label {
+            e.0 += 1;
+            ok += 1;
+        } else {
+            wrong.push(EvalMiss {
+                text,
+                want: label,
+                got: got.to_string(),
+            });
+        }
+    }
+    (
+        ok as f64 / n.max(1) as f64,
+        per.into_iter().map(|(k, (c, t))| (k, c, t)).collect(),
+        wrong,
+    )
 }
 
 #[cfg(test)]
@@ -963,6 +1385,69 @@ mod tests {
     }
 
     #[test]
+    fn policy_prefer_avoid_and_optimize() {
+        let reg = registry(vec![
+            model("a", "strong", 95, 30, None),
+            model("b", "fast", 50, 95, None),
+            model("c", "meh", 60, 60, None),
+        ]);
+        let r = Router::new(None);
+        // default: quality wins for coding work
+        let base = r.pick(&reg, Strategy::Smart, &need(), "s", &[], 0).unwrap();
+        assert_eq!(base.model.id, "strong");
+        // prefer: a provider pattern moves its models to the front
+        let prefer = Policy {
+            prefer: vec!["c/*".into()],
+            ..Default::default()
+        };
+        let p = r
+            .pick_with(&reg, Strategy::Smart, &need(), "s", &[], 0, &prefer)
+            .unwrap();
+        assert_eq!(p.model.id, "meh");
+        assert!(p.reason.contains("preferred"), "{}", p.reason);
+        // avoid: still used when it is the only one left
+        let avoid = Policy {
+            avoid: vec!["a/strong".into()],
+            ..Default::default()
+        };
+        let p = r
+            .pick_with(&reg, Strategy::Smart, &need(), "s", &[], 0, &avoid)
+            .unwrap();
+        assert_ne!(p.model.id, "strong");
+        let only = vec!["b/fast".to_string(), "c/meh".to_string()];
+        let p = r
+            .pick_with(&reg, Strategy::Smart, &need(), "s", &only, 0, &avoid)
+            .unwrap();
+        assert_eq!(p.model.id, "strong");
+        assert!(p.reason.contains("avoided"));
+        // optimize speed flips the default
+        let speedy = Policy {
+            optimize: Optimize::Speed,
+            ..Default::default()
+        };
+        let p = r
+            .pick_with(&reg, Strategy::Smart, &need(), "s", &[], 0, &speedy)
+            .unwrap();
+        assert_eq!(p.model.id, "fast");
+    }
+
+    #[test]
+    fn why_report_explains_a_blocked_model() {
+        let reg = registry(vec![model("a", "m", 80, 50, Some(2))]);
+        let r = Router::new(None);
+        let m = reg.get("a", "m").unwrap().clone();
+        r.record_request(&m, 100);
+        r.record_request(&m, 100);
+        let w = r.why(&reg, "a/m", &need()).unwrap();
+        assert!(w.in_pool && w.fits_request);
+        assert_eq!(w.rpm, (2, Some(2)));
+        let (why, wait) = w.blocked.unwrap();
+        assert!(why.contains("requests/min"), "{why}");
+        assert!(wait.unwrap() <= 60_000);
+        assert!(r.why(&reg, "a/nope", &need()).is_none());
+    }
+
+    #[test]
     fn success_clears_failure_streak() {
         let reg = registry(vec![model("a", "m", 80, 50, None)]);
         let r = Router::new(None);
@@ -982,6 +1467,19 @@ mod tests {
         r.record_request(&m, 500);
         r.record_latency(&m, 300, 100, 1_000);
         assert!(r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).is_some());
+    }
+
+    #[test]
+    fn routing_classifier_accuracy() {
+        let (acc, per, wrong) = routing_eval();
+        for (label, c, t) in &per {
+            eprintln!("{label:<13} {c}/{t}");
+        }
+        for m in wrong.iter().take(40) {
+            eprintln!("  ✗ {:<12} got {:<12} {}", m.want, m.got, m.text);
+        }
+        eprintln!("overall {:.1}%", acc * 100.0);
+        assert!(acc >= 0.90, "routing accuracy {:.1}% < 90%", acc * 100.0);
     }
 
     #[test]

@@ -517,6 +517,16 @@ impl Index {
         out
     }
 
+    /// `refresh` unless another thread is already indexing (then the caller
+    /// uses whatever is there rather than waiting on a cold index).
+    pub fn refresh_if_idle(&self) -> bool {
+        if self.state.try_lock().is_err() {
+            return false;
+        }
+        self.refresh();
+        true
+    }
+
     /// Symbols whose names appear in `text` (a user prompt), most specific
     /// first, for the `<symbols>` prompt block; when `skeleton_chars > 0`
     /// the outline of the file holding most matches follows, if it fits.
@@ -529,7 +539,10 @@ impl Index {
         if words.is_empty() {
             return String::new();
         }
-        let st = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        // a refresh in progress means a cold index: don't hold the turn for it
+        let Ok(st) = self.state.try_lock() else {
+            return String::new();
+        };
         if st.by_name.is_empty() {
             return String::new();
         }

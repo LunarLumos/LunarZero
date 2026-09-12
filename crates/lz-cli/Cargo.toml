@@ -36,3 +36,4 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 reqwest.workspace = true
 flate2.workspace = true
+libc.workspace = true

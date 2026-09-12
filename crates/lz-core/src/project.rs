@@ -63,14 +63,11 @@ fn sha1_hex(s: &str) -> String {
 
 pub fn resolve(directory: &Path) -> Project {
     let Some(worktree) = git(&["rev-parse", "--show-toplevel"], directory) else {
-        let root = directory
-            .ancestors()
-            .last()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("/"));
+        // not a repository: the directory itself is the boundary — the index,
+        // the project map and the external-directory guard all key off it
         return Project {
             id: GLOBAL_ID.into(),
-            worktree: root,
+            worktree: directory.to_path_buf(),
             vcs: None,
             git_common_dir: None,
         };

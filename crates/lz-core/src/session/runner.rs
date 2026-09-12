@@ -857,7 +857,7 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 let block = tokio::time::timeout(
                     std::time::Duration::from_secs(3),
                     tokio::task::spawn_blocking(move || {
-                        index.refresh();
+                        index.refresh_if_idle();
                         index.relevant(&text, budget, sk_budget)
                     }),
                 )

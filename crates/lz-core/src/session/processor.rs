@@ -946,10 +946,17 @@ pub async fn process(input: ProcessInput) -> StepResult {
                     let cooldown = engine.router.record_failure(&ctx.model, &err);
                     let route = input.route.as_ref().unwrap();
                     let registry = engine.registry();
-                    let next =
-                        engine
-                            .router
-                            .pick(&registry, route.strategy, &route.need, &session_id, &tried, 0);
+                    let next = engine.router.pick_with(
+                        &registry,
+                        route.strategy,
+                        &route.need,
+                        &session_id,
+                        &tried,
+                        0,
+                        &crate::provider::router::Policy::from_config(
+                            engine.config().pool.as_ref().and_then(|p| p.policy.as_ref()),
+                        ),
+                    );
                     if let Some(pick) = next {
                         tracing::warn!(
                             from = %tried.last().cloned().unwrap_or_default(),
@@ -999,11 +1006,17 @@ pub async fn process(input: ProcessInput) -> StepResult {
                         engine.status.set(&engine.bus, &session_id, SessionStatus::Busy);
                         tried.retain(|t| *t != key);
                         // the waited-for model may still lose to a better one that freed up
-                        if let Some(pick) =
-                            engine
-                                .router
-                                .pick(&registry, route.strategy, &route.need, &session_id, &tried, 0)
-                        {
+                        if let Some(pick) = engine.router.pick_with(
+                            &registry,
+                            route.strategy,
+                            &route.need,
+                            &session_id,
+                            &tried,
+                            0,
+                            &crate::provider::router::Policy::from_config(
+                                engine.config().pool.as_ref().and_then(|p| p.policy.as_ref()),
+                            ),
+                        ) {
                             ctx.switch_model(pick.model, &format!("waited for {key}")).await;
                             tried.push(format!("{}/{}", ctx.model.provider_id, ctx.model.id));
                             request = build_request(&ctx.model);

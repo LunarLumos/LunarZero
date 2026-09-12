@@ -236,6 +236,24 @@ pub fn apply(providers: &mut BTreeMap<String, Provider>, config: &Config, all_mo
             model.variants = transform::variants(model, None);
         }
     }
+    // 3a. `policy.local_first`: a running Ollama / LM Studio joins the pool
+    if cfg.policy.as_ref().and_then(|p| p.local_first).unwrap_or(false) {
+        for p in providers.values_mut() {
+            if !super::is_local(&p.base_url) || !p.connected() {
+                continue;
+            }
+            for m in p.models.values_mut() {
+                if m.protocol.is_some() && super::is_chat_model(&m.id) {
+                    m.pool.get_or_insert(PoolInfo {
+                        quality: 55,
+                        speed: 80,
+                        ..Default::default()
+                    });
+                    any_connected = true;
+                }
+            }
+        }
+    }
     // 3. user-listed extra members
     if let Some(extra) = &cfg.include {
         for spec in extra {

@@ -267,7 +267,15 @@ impl Engine {
             let registry = self.registry();
             let pick = self
                 .router
-                .pick(&registry, strategy, &need, session_id, &[], sticky_minutes)
+                .pick_with(
+                    &registry,
+                    strategy,
+                    &need,
+                    session_id,
+                    &[],
+                    sticky_minutes,
+                    &crate::provider::router::Policy::from_config(pool.policy.as_ref()),
+                )
                 .ok_or_else(|| {
                     let connected: Vec<String> = registry
                         .connected()

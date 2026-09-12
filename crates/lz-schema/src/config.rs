@@ -411,6 +411,26 @@ pub struct PoolConfig {
     /// when your keys are on paid plans (default false).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub paid: Option<bool>,
+    /// Routing preferences beyond quality/speed scores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<PoolPolicy>,
+}
+
+/// `pool.policy`: what the router should favour when several models fit.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct PoolPolicy {
+    /// `provider/model` or `provider/*` patterns to favour, most preferred first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefer: Option<Vec<String>>,
+    /// Patterns to use only when nothing else is available (still allowed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avoid: Option<Vec<String>>,
+    /// `balanced` (default) | `quality` | `speed` | `latency`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub optimize: Option<String>,
+    /// Route to a running local server (Ollama, LM Studio) before any cloud model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_first: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
