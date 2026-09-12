@@ -23,6 +23,63 @@ const SLOW_TIMEOUT_MS: u64 = 10 * 60 * 1000;
 /// How many times an identical line is kept before the rest are collapsed.
 const REPEAT_KEEP: usize = 3;
 
+/// Source argument of an `lz skill install` / `lz mcp install` invocation
+/// anywhere in the command line, if present.
+pub fn install_source(cmd: &str) -> Option<String> {
+    let toks: Vec<&str> = cmd
+        .split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ';' | '&' | '|' | '(' | ')'))
+        .filter(|t| !t.is_empty())
+        .collect();
+    for i in 0..toks.len() {
+        let bin = toks[i];
+        let is_lz = bin == "lz"
+            || bin == "lunarzero"
+            || bin.ends_with("/lz")
+            || bin.ends_with("/lunarzero")
+            || bin.contains("LZ_BIN");
+        if is_lz
+            && matches!(toks.get(i + 1), Some(&"skill") | Some(&"mcp"))
+            && toks.get(i + 2) == Some(&"install")
+        {
+            return toks[i + 3..]
+                .iter()
+                .find(|t| !t.starts_with('-'))
+                .map(|t| t.to_string());
+        }
+    }
+    None
+}
+
+/// Did the user's own latest message ask for this install? The source (or
+/// its last path segment / package name) must appear in it.
+pub fn user_requested_install(user_text: &str, source: &str) -> bool {
+    let text = user_text.to_ascii_lowercase();
+    if text.is_empty() {
+        return false;
+    }
+    let src = source.to_ascii_lowercase();
+    let mut needles: Vec<String> = vec![src.clone()];
+    let bare = src
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .rsplit('/')
+        .next()
+        .unwrap_or(&src)
+        .to_string();
+    if bare.len() >= 3 {
+        needles.push(bare.clone());
+    }
+    if let Some((_, pkg)) = src.split_once(':')
+        && pkg.len() >= 3
+    {
+        needles.push(pkg.rsplit('/').next().unwrap_or(pkg).to_string());
+    }
+    let mentions_install = ["install", "add", "set up", "setup", "connect", "use"]
+        .iter()
+        .any(|w| text.contains(w));
+    mentions_install && needles.iter().any(|n| text.contains(n.as_str()))
+}
+
 fn is_slow_command(cmd: &str) -> bool {
     const SLOW: &[&str] = &[
         "npm install",
@@ -454,6 +511,27 @@ impl Tool for BashTool {
             )
             .await?;
         }
+        // The built-in installers clone, build and run third-party code. When
+        // the user asked for exactly this install it is an ordinary command;
+        // when the model picked it up elsewhere (a README, a web page, a
+        // tool result) a human must confirm, whatever the permission mode.
+        if let Some(source) = install_source(&args.command)
+            && !user_requested_install(&ctx.last_user_text(), &source)
+        {
+            ctx.ask_forced(
+                "install",
+                vec![source.clone()],
+                json!({
+                    "command": args.command,
+                    "source": source,
+                    "reason": "The agent wants to install third-party code you did not ask for. It will be cloned, built and run on this machine."
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
+            )
+            .await?;
+        }
         if !scanned.patterns.is_empty() {
             ctx.ask(
                 "bash",
@@ -733,6 +811,42 @@ mod output_tests {
         assert!(is_slow_command("npx prisma migrate deploy"));
         assert!(!is_slow_command("ls -la"));
         assert!(!is_slow_command("git status"));
+    }
+
+    #[test]
+    fn install_gate() {
+        assert_eq!(
+            install_source("\"$LZ_BIN\" mcp install https://github.com/org/server --name x"),
+            Some("https://github.com/org/server".into())
+        );
+        assert_eq!(
+            install_source("lz skill install pdf --project"),
+            Some("pdf".into())
+        );
+        assert_eq!(
+            install_source("cd app && /usr/local/bin/lz mcp install npm:@scope/srv"),
+            Some("npm:@scope/srv".into())
+        );
+        assert_eq!(install_source("lz mcp list"), None);
+        assert_eq!(install_source("npm install react"), None);
+        assert!(user_requested_install(
+            "please install the github mcp server",
+            "github"
+        ));
+        assert!(user_requested_install(
+            "add https://github.com/org/server as an mcp",
+            "https://github.com/org/server"
+        ));
+        assert!(user_requested_install("install npm:@scope/srv", "npm:@scope/srv"));
+        assert!(!user_requested_install(
+            "fix the failing tests",
+            "https://github.com/org/server"
+        ));
+        assert!(!user_requested_install("", "pdf"));
+        assert!(!user_requested_install(
+            "install the pdf skill",
+            "https://github.com/evil/other"
+        ));
     }
 
     #[test]

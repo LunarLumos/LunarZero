@@ -1134,7 +1134,20 @@ impl EngineApi for Engine {
         std::fs::read_to_string(self.resolve_path(path)).map_err(Self::err)
     }
     async fn set_auth(&self, provider: &str, auth: AuthInfo) -> ApiResult<()> {
-        self.auth.set(provider, auth).map_err(Self::err)?;
+        // `"auth": {"keychain": true}` → API keys go to the OS keychain
+        let want_keychain = self
+            .raw_config
+            .load()
+            .get("auth")
+            .and_then(|a| a.get("keychain"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        match auth {
+            AuthInfo::Api { key, .. } if want_keychain && crate::provider::auth::keychain_available() => {
+                self.auth.set_in_keychain(provider, &key).map_err(Self::err)?;
+            }
+            other => self.auth.set(provider, other).map_err(Self::err)?,
+        }
         self.reload().await.map_err(Self::err)
     }
     async fn remove_auth(&self, provider: &str) -> ApiResult<()> {

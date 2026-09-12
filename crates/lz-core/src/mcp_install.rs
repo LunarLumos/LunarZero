@@ -44,6 +44,28 @@ async fn run(cmd: &str, args: &[&str], cwd: &Path, log: &mut Vec<String>) -> Res
         .output()
         .await
         .map_err(|e| format!("{cmd}: {e}"))?;
+    check_output(cmd, args, out)
+}
+
+/// Like `run`, for steps that execute the cloned code's own scripts (package
+/// installs, builds): scrubbed environment + OS sandbox where available.
+async fn run_sandboxed(
+    sb: &crate::sandbox::Sandbox,
+    cmd: &str,
+    args: &[&str],
+    cwd: &Path,
+    log: &mut Vec<String>,
+) -> Result<(), String> {
+    log.push(format!("$ {cmd} {}  [{}]", args.join(" "), sb.describe()));
+    let out = sb
+        .command(cmd, args, cwd)
+        .output()
+        .await
+        .map_err(|e| format!("{cmd}: {e}"))?;
+    check_output(cmd, args, out)
+}
+
+fn check_output(cmd: &str, args: &[&str], out: std::process::Output) -> Result<(), String> {
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let tail: String = err
@@ -395,10 +417,13 @@ async fn detect_and_build(
         } else {
             "npm"
         };
-        run(pm, &["install"], root, log).await?;
+        let sb = crate::sandbox::Sandbox::new(paths);
+        let mut install_args = vec!["install"];
+        install_args.extend(sb.npm_install_flags());
+        run_sandboxed(&sb, pm, &install_args, root, log).await?;
         let scripts = pkg.get("scripts").and_then(Value::as_object);
         if scripts.is_some_and(|s| s.contains_key("build")) {
-            run(pm, &["run", "build"], root, log).await?;
+            run_sandboxed(&sb, pm, &["run", "build"], root, log).await?;
         }
         // entry: bin → main → common build outputs
         let bin_entry = match pkg.get("bin") {
@@ -460,7 +485,8 @@ async fn detect_and_build(
             sync_args.push("--no-dev".into());
         }
         let sync_ref: Vec<&str> = sync_args.iter().map(String::as_str).collect();
-        run(&uv, &sync_ref, root, log).await?;
+        let sb = crate::sandbox::Sandbox::new(paths);
+        run_sandboxed(&sb, &uv, &sync_ref, root, log).await?;
         let cmd = match &script {
             Some(s) => vec![
                 uv.clone(),
@@ -500,7 +526,8 @@ async fn detect_and_build(
         if !on_path("cargo") {
             return Err("this server needs a Rust toolchain (cargo)".into());
         }
-        run("cargo", &["build", "--release", "--quiet"], root, log).await?;
+        let sb = crate::sandbox::Sandbox::new(paths);
+        run_sandboxed(&sb, "cargo", &["build", "--release", "--quiet"], root, log).await?;
         let bin = std::fs::read_dir(root.join("target/release"))
             .ok()
             .and_then(|rd| {
@@ -519,7 +546,15 @@ async fn detect_and_build(
             return Err("this server needs Go".into());
         }
         let out = root.join("bin/server");
-        run("go", &["build", "-o", &out.display().to_string(), "."], root, log).await?;
+        let sb = crate::sandbox::Sandbox::new(paths);
+        run_sandboxed(
+            &sb,
+            "go",
+            &["build", "-o", &out.display().to_string(), "."],
+            root,
+            log,
+        )
+        .await?;
         return Ok(("go".into(), vec![out.display().to_string()], root.to_path_buf()));
     }
     Err("no package.json, pyproject.toml, Cargo.toml or go.mod found — point at the server's sub-folder (…/tree/main/src/<server>) or use npm:<package> / pypi:<package>".into())

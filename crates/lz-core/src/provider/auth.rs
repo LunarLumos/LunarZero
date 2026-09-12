@@ -14,6 +14,34 @@ pub struct AuthStore {
     fallback: Option<PathBuf>,
 }
 
+/// Placeholder stored in `auth.json` when the secret lives in the OS keychain
+/// (macOS Keychain, Secret Service on Linux, Credential Manager on Windows).
+pub const KEYCHAIN_REF: &str = "@keychain";
+const KEYCHAIN_SERVICE: &str = "lunarzero";
+
+fn keychain_entry(provider: &str) -> Option<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, provider).ok()
+}
+
+/// Is the OS keychain usable on this machine (a probe, cached per process)?
+pub fn keychain_available() -> bool {
+    static AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        let Some(e) = keychain_entry("lz-probe") else {
+            return false;
+        };
+        let ok = match e.set_password("probe") {
+            Ok(()) => true,
+            Err(err) => {
+                tracing::warn!("OS keychain unavailable: {err}");
+                false
+            }
+        };
+        let _ = e.delete_credential();
+        ok
+    })
+}
+
 impl AuthStore {
     pub fn new(paths: &Paths) -> Self {
         Self {
@@ -52,7 +80,65 @@ impl AuthStore {
             .map(|p| Self::read_file(p))
             .unwrap_or_default();
         out.extend(Self::read_file(&self.path));
+        // resolve keychain references
+        for (provider, info) in out.iter_mut() {
+            if let AuthInfo::Api { key, .. } = info
+                && key == KEYCHAIN_REF
+            {
+                match keychain_entry(provider).and_then(|e| e.get_password().ok()) {
+                    Some(secret) => *key = secret,
+                    None => key.clear(),
+                }
+            }
+        }
+        out.retain(|_, info| !matches!(info, AuthInfo::Api { key, .. } if key.is_empty()));
         out
+    }
+
+    /// Where a provider's secret is kept: `file`, `keychain`, `env`, or absent.
+    pub fn location(&self, provider: &str) -> Option<&'static str> {
+        if env_var("AUTH_CONTENT").is_some() {
+            return Some("env");
+        }
+        let file = Self::read_file(&self.path);
+        match file.get(provider) {
+            Some(AuthInfo::Api { key, .. }) if key == KEYCHAIN_REF => Some("keychain"),
+            Some(_) => Some("file"),
+            None => self
+                .fallback
+                .as_ref()
+                .filter(|p| Self::read_file(p).contains_key(provider))
+                .map(|_| "file"),
+        }
+    }
+
+    /// Store an API key in the OS keychain; `auth.json` keeps only a reference.
+    pub fn set_in_keychain(&self, provider: &str, key: &str) -> std::io::Result<()> {
+        let entry = keychain_entry(provider).ok_or_else(|| std::io::Error::other("keychain unavailable"))?;
+        entry
+            .set_password(key)
+            .map_err(|e| std::io::Error::other(format!("keychain: {e}")))?;
+        self.set(
+            provider,
+            AuthInfo::Api {
+                key: KEYCHAIN_REF.into(),
+                metadata: None,
+            },
+        )
+    }
+
+    /// Move every file-stored API key into the keychain. Returns the providers moved.
+    pub fn migrate_to_keychain(&self) -> std::io::Result<Vec<String>> {
+        let mut moved = Vec::new();
+        for (provider, info) in Self::read_file(&self.path) {
+            if let AuthInfo::Api { key, .. } = info
+                && key != KEYCHAIN_REF
+            {
+                self.set_in_keychain(&provider, &key)?;
+                moved.push(provider);
+            }
+        }
+        Ok(moved)
     }
 
     pub fn get(&self, provider: &str) -> Option<AuthInfo> {
@@ -67,7 +153,12 @@ impl AuthStore {
 
     pub fn remove(&self, provider: &str) -> std::io::Result<()> {
         let mut current = Self::read_file(&self.path);
-        current.remove(provider);
+        if let Some(AuthInfo::Api { key, .. }) = current.remove(provider)
+            && key == KEYCHAIN_REF
+            && let Some(e) = keychain_entry(provider)
+        {
+            let _ = e.delete_credential();
+        }
         self.write(&current)
     }
 

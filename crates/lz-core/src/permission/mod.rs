@@ -137,6 +137,12 @@ pub struct AskInput {
     pub metadata: Map<String, Value>,
     pub tool: Option<ToolRef>,
     pub ruleset: Ruleset,
+    /// Always put the request in front of the user, whatever the rules, the
+    /// permission mode or `--auto` say (explicit deny rules still win). Used
+    /// for actions the agent picked up from content rather than from the
+    /// user — installing third-party code, for one. With nobody to answer
+    /// (`--auto`, non-interactive) it is refused.
+    pub force: bool,
 }
 
 /// What an approval carries back to the tool.
@@ -197,12 +203,12 @@ impl Permissions {
 
     /// Evaluate and, if needed, block until the user replies.
     pub async fn ask(&self, input: AskInput) -> Result<Grant, PermissionError> {
-        if self.auto_approve {
+        if self.auto_approve && !input.force {
             return Ok(Grant::default());
         }
         let approved = self.approved_ruleset();
         let rulesets: Vec<&Ruleset> = vec![&input.ruleset, &approved];
-        let mut needs_ask = false;
+        let mut needs_ask = input.force;
         for pattern in &input.patterns {
             let rule = evaluate(&input.permission, pattern, &rulesets);
             match rule.action {
@@ -218,6 +224,13 @@ impl Permissions {
         }
         if !needs_ask {
             return Ok(Grant::default());
+        }
+        if self.auto_approve {
+            // forced, but nobody is there to confirm
+            return Err(PermissionError::Denied(format!(
+                "'{}' needs an explicit confirmation from the user and this session runs unattended (--auto). Ask the user to run it themselves.",
+                input.permission
+            )));
         }
 
         let request = PermissionRequest {
@@ -383,6 +396,125 @@ mod tests {
         assert_eq!(evaluate("bash", "rm foo", &[&rs]).action, Action::Deny);
         assert_eq!(evaluate("bash", "rm -rf /tmp/x", &[&rs]).action, Action::Allow);
         assert_eq!(evaluate("edit", "x", &[&rs]).action, Action::Ask);
+    }
+
+    #[test]
+    fn deny_beats_everything_and_specific_after_general() {
+        let rs = from_config(
+            &serde_json::json!({
+                "bash": { "*": "allow", "rm *": "deny", "git *": "ask", "git status": "allow" }
+            }),
+            std::path::Path::new("/"),
+        );
+        assert_eq!(evaluate("bash", "ls -la", &[&rs]).action, Action::Allow);
+        assert_eq!(evaluate("bash", "rm -rf x", &[&rs]).action, Action::Deny);
+        assert_eq!(evaluate("bash", "git push", &[&rs]).action, Action::Ask);
+        assert_eq!(evaluate("bash", "git status", &[&rs]).action, Action::Allow);
+        // a later ruleset overrides an earlier one, rule by rule
+        let later = from_config(
+            &serde_json::json!({ "bash": { "rm *": "allow" } }),
+            std::path::Path::new("/"),
+        );
+        assert_eq!(evaluate("bash", "rm -rf x", &[&rs, &later]).action, Action::Allow);
+        // an unrelated permission never matches
+        assert_eq!(evaluate("edit", "rm -rf x", &[&rs]).action, Action::Ask);
+    }
+
+    #[test]
+    fn modes_tighten_defaults_but_user_rules_win() {
+        use lz_schema::permission::PermissionMode;
+        let defaults = from_config(&serde_json::json!({ "*": "allow" }), std::path::Path::new("/"));
+        let user = from_config(
+            &serde_json::json!({ "bash": { "git status": "allow", "rm *": "deny" } }),
+            std::path::Path::new("/"),
+        );
+        let agent = merge(&[&defaults, &user]);
+        let eval = |mode: Option<PermissionMode>, perm: &str, pat: &str| {
+            let rs = effective(&agent, mode, &user, None);
+            evaluate(perm, pat, &[&rs]).action
+        };
+        // no mode: legacy behaviour, everything allowed except user denies
+        assert_eq!(eval(None, "edit", "src/a.rs"), Action::Allow);
+        assert_eq!(eval(None, "bash", "rm -rf x"), Action::Deny);
+        // manual: edits and commands ask, but the user's allow-list still wins
+        assert_eq!(
+            eval(Some(PermissionMode::Manual), "edit", "src/a.rs"),
+            Action::Ask
+        );
+        assert_eq!(
+            eval(Some(PermissionMode::Manual), "bash", "cargo test"),
+            Action::Ask
+        );
+        assert_eq!(
+            eval(Some(PermissionMode::Manual), "bash", "git status"),
+            Action::Allow
+        );
+        assert_eq!(
+            eval(Some(PermissionMode::Manual), "bash", "rm -rf x"),
+            Action::Deny
+        );
+        // accept edits: edits through, commands still ask
+        assert_eq!(
+            eval(Some(PermissionMode::AcceptEdits), "edit", "src/a.rs"),
+            Action::Allow
+        );
+        assert_eq!(
+            eval(Some(PermissionMode::AcceptEdits), "bash", "cargo test"),
+            Action::Ask
+        );
+        // auto: nothing asks — but an explicit user deny is kept by the session rules layer
+        assert_eq!(
+            eval(Some(PermissionMode::Auto), "bash", "cargo test"),
+            Action::Allow
+        );
+        assert_eq!(
+            eval(Some(PermissionMode::Auto), "edit", "src/a.rs"),
+            Action::Allow
+        );
+        // plan: edits denied outright, commands ask
+        assert_eq!(eval(Some(PermissionMode::Plan), "edit", "src/a.rs"), Action::Deny);
+        assert_eq!(
+            eval(Some(PermissionMode::Plan), "bash", "cargo test"),
+            Action::Ask
+        );
+        // session rules are the last word
+        let session = from_config(&serde_json::json!({ "edit": "deny" }), std::path::Path::new("/"));
+        let rs = effective(&agent, Some(PermissionMode::Auto), &user, Some(&session));
+        assert_eq!(evaluate("edit", "src/a.rs", &[&rs]).action, Action::Deny);
+    }
+
+    #[tokio::test]
+    async fn forced_ask_is_refused_when_unattended() {
+        // --auto approves everything… except a forced request, which needs a human
+        let storage = crate::storage::Storage::open_in_memory().unwrap();
+        let bus = crate::bus::Bus::new(None);
+        let perms = Permissions::new(bus, storage, "p", true);
+        let ok = perms
+            .ask(AskInput {
+                session_id: "s".into(),
+                permission: "bash".into(),
+                patterns: vec!["ls".into()],
+                always: vec![],
+                metadata: Default::default(),
+                tool: None,
+                ruleset: Vec::new(),
+                force: false,
+            })
+            .await;
+        assert!(ok.is_ok());
+        let forced = perms
+            .ask(AskInput {
+                session_id: "s".into(),
+                permission: "install".into(),
+                patterns: vec!["https://example.com/x".into()],
+                always: vec![],
+                metadata: Default::default(),
+                tool: None,
+                ruleset: Vec::new(),
+                force: true,
+            })
+            .await;
+        assert!(matches!(forced, Err(PermissionError::Denied(_))), "{forced:?}");
     }
 
     #[test]

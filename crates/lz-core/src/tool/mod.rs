@@ -99,6 +99,28 @@ impl ToolCtx {
         always: Vec<String>,
         metadata: Map<String, Value>,
     ) -> Result<crate::permission::Grant, PermissionError> {
+        self.ask_with(permission, patterns, always, metadata, false).await
+    }
+
+    /// Ask and insist on a human answer regardless of mode/rules/`--auto`.
+    pub async fn ask_forced(
+        &self,
+        permission: &str,
+        patterns: Vec<String>,
+        metadata: Map<String, Value>,
+    ) -> Result<crate::permission::Grant, PermissionError> {
+        self.ask_with(permission, patterns, Vec::new(), metadata, true)
+            .await
+    }
+
+    async fn ask_with(
+        &self,
+        permission: &str,
+        patterns: Vec<String>,
+        always: Vec<String>,
+        metadata: Map<String, Value>,
+        force: bool,
+    ) -> Result<crate::permission::Grant, PermissionError> {
         let session = self.engine.sessions.get(&self.session_id).await.ok();
         let ruleset = crate::permission::effective(
             &self.agent.permission,
@@ -119,8 +141,32 @@ impl ToolCtx {
                     call_id: self.call_id.clone(),
                 }),
                 ruleset,
+                force,
             })
             .await
+    }
+
+    /// Text of the user's latest own message (synthetic parts excluded).
+    pub fn last_user_text(&self) -> String {
+        self.messages
+            .iter()
+            .rev()
+            .find(|m| matches!(m.info, lz_schema::session::Message::User(_)))
+            .map(|m| {
+                m.parts
+                    .iter()
+                    .filter_map(|p| match &p.kind {
+                        lz_schema::session::PartKind::Text {
+                            text,
+                            synthetic: false,
+                            ..
+                        } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default()
     }
 
     pub fn directory(&self) -> &std::path::Path {

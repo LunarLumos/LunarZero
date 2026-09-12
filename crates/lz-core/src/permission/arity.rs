@@ -173,4 +173,20 @@ mod tests {
         assert_eq!(prefix(&t("python script.py")), t("python script.py"));
         assert_eq!(prefix(&t("unknowncmd a b")), t("unknowncmd"));
     }
+
+    #[test]
+    fn longest_prefix_wins_and_short_commands_stay_short() {
+        // `cargo run` (3) beats `cargo` (2)
+        assert_eq!(prefix(&t("cargo run --release")), t("cargo run --release"));
+        assert_eq!(prefix(&t("cargo build --release")), t("cargo build"));
+        // a command shorter than its arity is not padded
+        assert_eq!(prefix(&t("git")), t("git"));
+        assert_eq!(prefix(&t("npm")), t("npm"));
+        // dangerous one-token commands keep only the binary: the pattern
+        // `rm *` would be what "always" approves, never `rm -rf *`
+        assert_eq!(prefix(&t("rm -rf /")), t("rm"));
+        assert_eq!(prefix(&t("kill -9 1")), t("kill"));
+        // empty input
+        assert!(prefix(&[]).is_empty());
+    }
 }

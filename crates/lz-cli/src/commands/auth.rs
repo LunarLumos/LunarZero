@@ -20,11 +20,16 @@ pub async fn run(cmd: AuthCommand) -> anyhow::Result<i32> {
                     AuthInfo::Api { .. } => "api key",
                     AuthInfo::OAuth { .. } => "oauth",
                 };
-                println!("{provider:<20} {kind}");
+                let at = store.location(&provider).unwrap_or("file");
+                println!("{provider:<20} {kind}  ({at})");
             }
             Ok(0)
         }
-        AuthCommand::Login { provider, key } => {
+        AuthCommand::Login {
+            provider,
+            key,
+            keychain,
+        } => {
             let catalog = lz_core::provider::catalog::embedded();
             let provider = match provider {
                 Some(p) => p,
@@ -60,8 +65,29 @@ pub async fn run(cmd: AuthCommand) -> anyhow::Result<i32> {
                     .with_display_mode(inquire::PasswordDisplayMode::Masked)
                     .prompt()?,
             };
-            store.set(&provider, AuthInfo::Api { key, metadata: None })?;
-            println!("stored credential for {provider} in {}", store.path().display());
+            let want_keychain = keychain || keychain_default();
+            if want_keychain {
+                if !lz_core::provider::auth::keychain_available() {
+                    anyhow::bail!("the OS keychain is not available here; omit --keychain to use auth.json");
+                }
+                store.set_in_keychain(&provider, &key)?;
+                println!("stored credential for {provider} in the OS keychain");
+            } else {
+                store.set(&provider, AuthInfo::Api { key, metadata: None })?;
+                println!("stored credential for {provider} in {}", store.path().display());
+            }
+            Ok(0)
+        }
+        AuthCommand::Migrate => {
+            if !lz_core::provider::auth::keychain_available() {
+                anyhow::bail!("the OS keychain is not available here");
+            }
+            let moved = store.migrate_to_keychain()?;
+            if moved.is_empty() {
+                println!("nothing to move — no file-stored keys");
+            } else {
+                println!("moved to the OS keychain: {}", moved.join(", "));
+            }
             Ok(0)
         }
         AuthCommand::Logout { provider } => {
@@ -81,4 +107,24 @@ pub async fn run(cmd: AuthCommand) -> anyhow::Result<i32> {
             Ok(0)
         }
     }
+}
+
+/// `"auth": {"keychain": true}` in the global config makes login default to the keychain.
+fn keychain_default() -> bool {
+    let paths = lz_core::paths::Paths::detect();
+    let dir = std::env::current_dir().unwrap_or_default();
+    let worktree = lz_core::project::resolve(&dir).worktree;
+    lz_core::config::load(lz_core::config::LoadInput {
+        paths: &paths,
+        directory: &dir,
+        worktree: &worktree,
+    })
+    .ok()
+    .and_then(|l| {
+        l.raw
+            .get("auth")
+            .and_then(|a| a.get("keychain"))
+            .and_then(|v| v.as_bool())
+    })
+    .unwrap_or(false)
 }

@@ -835,6 +835,155 @@ mod tests {
         assert!(usage.iter().any(|u| u.model == "quick" && u.cooldown_secs > 0));
     }
 
+    fn need() -> Need {
+        Need {
+            tools: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn retry_after_is_honoured_exactly() {
+        let reg = registry(vec![model("a", "m", 80, 50, None)]);
+        let r = Router::new(None);
+        let m = reg.get("a", "m").unwrap().clone();
+        let d = r.record_failure(
+            &m,
+            &LlmError::RateLimited {
+                message: "slow down".into(),
+                retry_after_ms: Some(4_000),
+            },
+        );
+        // provider said 4 s: wait that plus a second of slack, not a backoff table
+        assert_eq!(d, Duration::from_millis(5_000));
+        assert!(r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).is_none());
+        let (_, wait, why) = r.soonest(&reg, &need(), &[], 120_000).unwrap();
+        assert!((4_000..=5_000).contains(&wait), "{wait}");
+        assert!(!why.is_empty());
+        // and not for a wait longer than the caller accepts
+        assert!(r.soonest(&reg, &need(), &[], 1_000).is_none());
+    }
+
+    #[test]
+    fn daily_quota_cools_down_until_utc_midnight() {
+        let reg = registry(vec![model("a", "m", 80, 50, None)]);
+        let r = Router::new(None);
+        let m = reg.get("a", "m").unwrap().clone();
+        let d = r.record_failure(
+            &m,
+            &LlmError::RateLimited {
+                message: "Rate limit reached: requests per day (RPD) exhausted".into(),
+                retry_after_ms: Some(2_000),
+            },
+        );
+        // a daily cap ignores retry-after: it is out until the day rolls over
+        assert!(d > Duration::from_secs(60), "{d:?}");
+        assert!(d <= Duration::from_secs(24 * 3600));
+        let explain = r.explain(&reg, &need(), &[]);
+        assert_eq!(explain.len(), 1);
+        assert!(explain[0].2.unwrap() > 60_000);
+    }
+
+    #[test]
+    fn auth_failure_benches_the_whole_provider() {
+        let reg = registry(vec![
+            model("a", "m1", 80, 50, None),
+            model("a", "m2", 70, 60, None),
+            model("b", "other", 60, 70, None),
+        ]);
+        let r = Router::new(None);
+        let m1 = reg.get("a", "m1").unwrap().clone();
+        r.record_failure(
+            &m1,
+            &LlmError::Authentication {
+                message: "invalid api key".into(),
+            },
+        );
+        // every model of provider `a` is blocked, `b` still serves
+        let pick = r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).unwrap();
+        assert_eq!(pick.model.provider_id, "b");
+        let blocked: Vec<String> = r
+            .explain(&reg, &need(), &[])
+            .into_iter()
+            .map(|(k, _, _)| k)
+            .collect();
+        assert!(blocked.contains(&"a/m1".to_string()) && blocked.contains(&"a/m2".to_string()));
+    }
+
+    #[test]
+    fn missing_model_is_out_for_a_day_and_backoff_grows() {
+        let reg = registry(vec![model("a", "m", 80, 50, None)]);
+        let r = Router::new(None);
+        let m = reg.get("a", "m").unwrap().clone();
+        let gone = LlmError::Provider {
+            status: 404,
+            message: "model not found".into(),
+            retry_after_ms: None,
+            headers: Default::default(),
+            body: None,
+        };
+        assert_eq!(r.record_failure(&m, &gone), Duration::from_secs(24 * 3600));
+
+        let r2 = Router::new(None);
+        let flaky = LlmError::Provider {
+            status: 503,
+            message: "unavailable".into(),
+            retry_after_ms: None,
+            headers: Default::default(),
+            body: None,
+        };
+        let first = r2.record_failure(&m, &flaky);
+        let second = r2.record_failure(&m, &flaky);
+        let third = r2.record_failure(&m, &flaky);
+        assert!(first < second && second < third, "{first:?} {second:?} {third:?}");
+        // …but capped, so a flapping provider is retried within minutes, not hours
+        for _ in 0..20 {
+            r2.record_failure(&m, &flaky);
+        }
+        assert!(r2.record_failure(&m, &flaky) <= Duration::from_secs(15 * 60));
+    }
+
+    #[test]
+    fn tried_models_are_skipped_and_exhaustion_is_explained() {
+        let reg = registry(vec![
+            model("a", "m1", 80, 50, None),
+            model("b", "m2", 70, 60, None),
+        ]);
+        let r = Router::new(None);
+        // the step already tried m1 (failed mid-stream, say): the next pick is m2
+        let pick = r
+            .pick(&reg, Strategy::Auto, &need(), "s", &["a/m1".to_string()], 0)
+            .unwrap();
+        assert_eq!(pick.model.id, "m2");
+        // both tried → nothing, and nothing is "soonest" either: the caller must stop, not spin
+        let tried = vec!["a/m1".to_string(), "b/m2".to_string()];
+        assert!(r.pick(&reg, Strategy::Auto, &need(), "s", &tried, 0).is_none());
+        assert!(r.soonest(&reg, &need(), &tried, u64::MAX).is_none());
+        assert!(r.explain(&reg, &need(), &tried).is_empty());
+    }
+
+    #[test]
+    fn success_clears_failure_streak() {
+        let reg = registry(vec![model("a", "m", 80, 50, None)]);
+        let r = Router::new(None);
+        let m = reg.get("a", "m").unwrap().clone();
+        let flaky = LlmError::Provider {
+            status: 500,
+            message: "boom".into(),
+            retry_after_ms: None,
+            headers: Default::default(),
+            body: None,
+        };
+        r.record_failure(&m, &flaky);
+        r.record_failure(&m, &flaky);
+        r.reset_cooldowns();
+        assert!(r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).is_some());
+        // a good request afterwards keeps it usable
+        r.record_request(&m, 500);
+        r.record_latency(&m, 300, 100, 1_000);
+        assert!(r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).is_some());
+    }
+
     #[test]
     fn sticky_keeps_session_on_model() {
         // two models of similar quality: the session sticks to its first pick

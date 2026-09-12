@@ -64,6 +64,19 @@ impl Paths {
         }
     }
 
+    /// All directories under one root (tests, sandboxes).
+    pub fn rooted(root: &std::path::Path) -> Self {
+        Self {
+            home: root.to_path_buf(),
+            config: root.join(".config/lunarzero"),
+            data: root.join(".local/share/lunarzero"),
+            cache: root.join(".cache/lunarzero"),
+            state: root.join(".local/state/lunarzero"),
+            legacy_config: root.join(".config/opencode"),
+            legacy_data: root.join(".local/share/opencode"),
+        }
+    }
+
     pub fn ensure(&self) -> std::io::Result<()> {
         for d in [
             &self.config,

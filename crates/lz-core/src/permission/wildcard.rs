@@ -54,4 +54,38 @@ mod tests {
         assert!(matches("src/x.rs", "src/?.rs"));
         assert!(matches("multi\nline", "multi*"));
     }
+
+    #[test]
+    fn regex_metacharacters_are_literal() {
+        // a pattern is a glob, never a regex: these must not widen the match
+        assert!(matches("a.b", "a.b"));
+        assert!(!matches("axb", "a.b"));
+        assert!(matches("f(x)", "f(x)"));
+        assert!(matches("[id]", "[id]"));
+        assert!(!matches("i", "[id]"));
+        assert!(matches("a+b", "a+b"));
+        assert!(!matches("aab", "a+b"));
+        assert!(matches("x$y", "x$y"));
+        assert!(matches("a|b", "a|b"));
+        assert!(!matches("a", "a|b"));
+    }
+
+    #[test]
+    fn anchored_and_trailing_space_star() {
+        // anchored at both ends
+        assert!(!matches("xgit status", "git *"));
+        assert!(!matches("git status; rm -rf /", "git status"));
+        // `git *` matches `git` alone and `git <anything>`, not `git-foo`
+        assert!(matches("git", "git *"));
+        assert!(!matches("git-foo", "git *"));
+        // `*` in the middle
+        assert!(matches("npm run build", "npm run *"));
+        assert!(matches("npm run", "npm run *"));
+        assert!(!matches("npm runx", "npm run *"));
+        // backslashes are normalised to slashes on both sides
+        assert!(matches("src\\lib.rs", "src/*.rs"));
+        // empty pattern only matches the empty input
+        assert!(matches("", ""));
+        assert!(!matches("a", ""));
+    }
 }

@@ -218,6 +218,28 @@ impl PermissionPanel {
                     out.push(Line::from(Span::styled(p.clone(), theme.text())));
                 }
             }
+            "install" => {
+                out.push(Line::from(Span::styled(
+                    "⚠ Third-party code the agent wants to install — you did not ask for this.",
+                    theme.bold("error"),
+                )));
+                if let Some(src) = m.get("source").and_then(|v| v.as_str()) {
+                    out.push(Line::from(vec![
+                        Span::styled("source  ", theme.muted()),
+                        Span::styled(src.to_string(), theme.text()),
+                    ]));
+                }
+                if let Some(c) = m.get("command").and_then(|v| v.as_str()) {
+                    out.push(Line::from(vec![
+                        Span::styled("$ ", theme.fg("primary")),
+                        Span::styled(c.to_string(), theme.text()),
+                    ]));
+                }
+                out.push(Line::from(Span::styled(
+                    "It will be cloned, built and run on this machine. Allow only if you trust the source.",
+                    theme.muted(),
+                )));
+            }
             "doom_loop" => {
                 out.push(Line::from(Span::styled(
                     "The model is repeating the same tool call. Continue?",

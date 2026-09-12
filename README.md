@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/LunarLumos/LunarZero/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/LunarLumos/LunarZero/ci.yml?branch=main&style=flat-square&labelColor=141b2e&label=CI"></a>
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-7aa2ff?style=flat-square&labelColor=141b2e"></a>
   <img alt="Rust" src="https://img.shields.io/badge/built%20with-Rust-e8ecf5?style=flat-square&logo=rust&logoColor=e8ecf5&labelColor=141b2e">
   <img alt="macOS · Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Linux-single%20binary-3fdc7a?style=flat-square&labelColor=141b2e">
@@ -129,6 +130,14 @@ if the new mode covers it.
 Modes sit between the agent's rules and your own `permission` config, so an explicit allow-list
 (`"bash": {"git status": "allow"}`) or deny keeps working in every mode.
 
+## Safety
+
+- **Nothing runs without a rule saying so.** Ordered `allow` / `ask` / `deny` rules with wildcards, last match wins; the default mode asks before every edit and command. Your own `permission` config beats any mode.
+- **Installing third-party code is never silent.** If the model wants to `lz skill|mcp install` something you didn't ask for — it read it in a README, a web page, a tool result — a confirmation appears no matter what mode or `--auto` says, and unattended runs refuse it.
+- **Install builds are boxed in.** Scrubbed environment (no keys/tokens, private `HOME`), and on macOS/Linux an OS sandbox that hides `~/.ssh`, `~/.aws`, `~/.netrc`, `~/.npmrc`, keychains and LunarZero's `auth.json` from the build; without one, package scripts are skipped.
+- **Keys where you want them.** `auth.json` at mode 0600, or `lz auth login --keychain` / `"auth": {"keychain": true}` to keep secrets in the OS keychain with only a reference on disk (`lz auth migrate` moves existing ones).
+- CI runs fmt, clippy `-D warnings`, the test suite on Linux and macOS, and `cargo audit`. See [SECURITY.md](SECURITY.md) for reporting.
+
 ## It finishes what it starts
 
 - **Live diagnostics before any build** — the language server on your PATH (rust-analyzer, typescript-language-server, pyright, gopls, …) is started on the first edit; every edit gets its errors back in ~200 ms, in the tool result, and a turn that ends with errors still in an edited file is sent to fix them before anything slow is spawned. `"lsp": false` turns it off.
@@ -165,7 +174,7 @@ A native tree-sitter index (Rust, Python, JavaScript/TypeScript, Go) is built in
 |---|---|
 | `lz [project] [-m model] [-c] [-s id] [--agent name] [--mode m] [--auto]` | TUI |
 | `lz run [message..] [--format text\|json] [-c] [--model] [--auto]` | non-interactive, NDJSON with `--format json` |
-| `lz setup` · `lz auth list\|login\|logout` | connect providers |
+| `lz setup` · `lz auth list\|login [--keychain]\|logout\|migrate` | connect providers |
 | `lz pool setup\|list\|status` | the free pool |
 | `lz models [provider]` · `lz agent list\|create` · `lz index [name]` | models, agents, symbol index |
 | `lz skill list\|install\|remove\|update` · `lz mcp list\|install\|add` · `lz recommend` | skills & MCP |

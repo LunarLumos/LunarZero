@@ -239,6 +239,7 @@ impl Ctx {
                         call_id: id.clone(),
                     }),
                     ruleset: self.agent.permission.clone(),
+                    force: false,
                 })
                 .await;
             if let Err(e) = ask {

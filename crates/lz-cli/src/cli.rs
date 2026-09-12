@@ -212,9 +212,15 @@ pub enum AuthCommand {
         /// API key (prompted when omitted)
         #[arg(long)]
         key: Option<String>,
+        /// Keep the key in the OS keychain (macOS Keychain / Secret Service / Credential Manager)
+        /// instead of auth.json; `"auth": {"keychain": true}` in config makes this the default
+        #[arg(long)]
+        keychain: bool,
     },
     /// Remove a stored credential
     Logout { provider: Option<String> },
+    /// Move every key stored in auth.json into the OS keychain
+    Migrate,
 }
 
 #[derive(Subcommand, Debug)]
