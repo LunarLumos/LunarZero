@@ -1,5 +1,6 @@
 //! Prompt intake and the outer multi-step loop.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dashmap::DashMap;
@@ -524,6 +525,19 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                     && heal_cfg.enabled.unwrap_or(true)
                     && heals < heal_max
                     && a.agent != "plan"
+                    && let Some(fail) = failed_diagnostics(&msgs, &last_user.id, a)
+                {
+                    heals += 1;
+                    tracing::info!(
+                        "language server errors left in edited files; repair round {heals}/{heal_max}"
+                    );
+                    push_heal_nudge(&engine, &session_id, &last_user, &fail, heals, heal_max).await?;
+                    continue;
+                }
+                if a.error.is_none()
+                    && heal_cfg.enabled.unwrap_or(true)
+                    && heals < heal_max
+                    && a.agent != "plan"
                     && let Some(fail) = failed_check(&msgs, &last_user.id, a)
                 {
                     heals += 1;
@@ -838,11 +852,18 @@ async fn run_loop(engine: Arc<Engine>, session_id: String, cancel: CancellationT
                 let index = engine.index.clone();
                 let text = user_text.clone();
                 let budget = ic.max_chars.unwrap_or(900);
-                let block = tokio::task::spawn_blocking(move || {
-                    index.refresh();
-                    index.relevant(&text, budget)
-                })
+                let sk_budget = ic.skeleton_chars.unwrap_or(3000);
+                // bounded: a cold index of a huge tree must never stall the turn
+                let block = tokio::time::timeout(
+                    std::time::Duration::from_secs(3),
+                    tokio::task::spawn_blocking(move || {
+                        index.refresh();
+                        index.relevant(&text, budget, sk_budget)
+                    }),
+                )
                 .await
+                .ok()
+                .and_then(|r| r.ok())
                 .unwrap_or_default();
                 if !block.is_empty() {
                     rest.push(block);
@@ -1108,6 +1129,60 @@ fn failed_check(msgs: &[MessageWithParts], user_id: &str, last: &AssistantMessag
     latest
 }
 
+/// Files edited this turn whose *latest* edit still carried language-server
+/// errors — caught in memory, before any build or test is spawned.
+fn failed_diagnostics(
+    msgs: &[MessageWithParts],
+    user_id: &str,
+    last: &AssistantMessage,
+) -> Option<FailedCheck> {
+    let mut by_file: BTreeMap<String, (usize, String)> = BTreeMap::new();
+    let mut seen_last = false;
+    for m in msgs {
+        let Message::Assistant(a) = &m.info else { continue };
+        if a.parent_id != user_id {
+            continue;
+        }
+        for p in &m.parts {
+            let PartKind::Tool { tool, state, .. } = &p.kind else {
+                continue;
+            };
+            if !matches!(tool.as_str(), "edit" | "write" | "apply_patch") {
+                continue;
+            }
+            if let ToolState::Completed { input, metadata, .. } = state {
+                let file = input["filePath"].as_str().unwrap_or("").to_string();
+                let errors = metadata["diagnostics"]["errors"].as_u64().unwrap_or(0) as usize;
+                if errors > 0 {
+                    let text = metadata["diagnostics"]["text"].as_str().unwrap_or("").to_string();
+                    by_file.insert(file, (errors, text));
+                } else {
+                    by_file.remove(&file);
+                }
+            }
+        }
+        seen_last |= a.id == last.id;
+    }
+    if !seen_last || by_file.is_empty() {
+        return None;
+    }
+    let total: usize = by_file.values().map(|(n, _)| n).sum();
+    let output = by_file
+        .values()
+        .map(|(_, t)| t.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(FailedCheck {
+        command: format!(
+            "language server ({} file{})",
+            by_file.len(),
+            if by_file.len() == 1 { "" } else { "s" }
+        ),
+        exit: total as i64,
+        output,
+    })
+}
+
 /// Hidden user message carrying the failure back to the model.
 async fn push_heal_nudge(
     engine: &Engine,
@@ -1138,15 +1213,18 @@ async fn push_heal_nudge(
         let start = t.char_indices().rev().nth(6_000).map(|(i, _)| i).unwrap_or(0);
         t[start..].to_string()
     };
-    let text = format!(
-        "`{}` exited with status {} (repair round {round} of {max}):
-```
-{tail}
-```
-Fix these errors now — read the files they point at, correct them, and run the same command again until it passes. \
-         If the failure is caused by something outside the code (missing tool, no network, a service that is down), say so in one line instead of retrying.",
-        fail.command, fail.exit
-    );
+    let text = if fail.command.starts_with("language server") {
+        format!(
+            "The {} still reports {} error(s) in files you edited (repair round {round} of {max}):\n{tail}\nFix them now — these come straight from the compiler's front end, so they will fail any build. Correct the code, then continue with what you were doing.",
+            fail.command, fail.exit
+        )
+    } else {
+        format!(
+            "`{}` exited with status {} (repair round {round} of {max}):\n```\n{tail}\n```\nFix these errors now — read the files they point at, correct them, and run the same command again until it passes. \
+             If the failure is caused by something outside the code (missing tool, no network, a service that is down), say so in one line instead of retrying.",
+            fail.command, fail.exit
+        )
+    };
     let np = engine.sessions.new_part(
         session_id,
         &cont.id,

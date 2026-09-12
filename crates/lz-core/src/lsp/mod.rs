@@ -17,6 +17,10 @@ use jsonrpc::JsonRpc;
 use servers::ServerDef;
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(45);
+/// How long the first edit may wait for a server to finish loading the
+/// workspace (rust-analyzer indexing, tsserver project load) before its
+/// diagnostics are trusted; later edits find it ready.
+const READY_WAIT: Duration = Duration::from_secs(90);
 const DIAGNOSTICS_DEBOUNCE: Duration = Duration::from_millis(150);
 const DIAGNOSTICS_WAIT: Duration = Duration::from_secs(5);
 const MAX_PER_FILE: usize = 20;
@@ -52,6 +56,9 @@ pub fn report(file: &Path, issues: &[Diagnostic]) -> Option<String> {
     ))
 }
 
+/// path → (document version the server reported for, diagnostics)
+type DiagnosticStore = Arc<RwLock<HashMap<PathBuf, (Option<i64>, Vec<Diagnostic>)>>>;
+
 struct ClientState {
     rpc: Arc<JsonRpc>,
     #[allow(dead_code)]
@@ -59,11 +66,14 @@ struct ClientState {
     def: &'static ServerDef,
     /// path → (version, line count of the last text sent)
     versions: Mutex<HashMap<PathBuf, (i32, u64)>>,
-    diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<Diagnostic>>>>,
+    /// path → (document version the server reported for, diagnostics)
+    diagnostics: DiagnosticStore,
     updates: broadcast::Sender<PathBuf>,
-    sync_kind: i64,
     /// Server supports `textDocument/diagnostic` pull requests.
     pull: bool,
+    /// `true` once every `$/progress` cycle the server started has ended
+    /// (or it never reported any): an empty diagnostics set means clean.
+    ready: tokio::sync::watch::Receiver<bool>,
 }
 
 fn uri(path: &Path) -> String {
@@ -100,10 +110,37 @@ impl ClientState {
         let (bin, args) = def.command.split_first().ok_or("empty command")?;
         let (updates, _) = broadcast::channel(64);
         let diag_tx = updates.clone();
-        let diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<Diagnostic>>>> =
-            Arc::new(RwLock::new(HashMap::new()));
+        let diagnostics: DiagnosticStore = Arc::new(RwLock::new(HashMap::new()));
         let diag_store = diagnostics.clone();
+        let (ready_tx, ready_rx) = tokio::sync::watch::channel(false);
+        let progress = Arc::new(std::sync::Mutex::new((0usize, false))); // (active, seen any)
+        let progress_for_cb = progress.clone();
+        let ready_for_cb = ready_tx.clone();
         let rpc = JsonRpc::spawn(bin, args, &root, move |method, params| {
+            tracing::debug!(
+                method,
+                "lsp notification: {}",
+                params.to_string().chars().take(200).collect::<String>()
+            );
+            if method == "$/progress" {
+                let kind = params["value"]["kind"].as_str().unwrap_or("");
+                let mut p = progress_for_cb.lock().unwrap_or_else(|e| e.into_inner());
+                match kind {
+                    "begin" => {
+                        p.0 += 1;
+                        p.1 = true;
+                        let _ = ready_for_cb.send(false);
+                    }
+                    "end" => {
+                        p.0 = p.0.saturating_sub(1);
+                        if p.0 == 0 {
+                            let _ = ready_for_cb.send(true);
+                        }
+                    }
+                    _ => {}
+                }
+                return;
+            }
             if method == "textDocument/publishDiagnostics" {
                 let Some(path) = params.get("uri").and_then(Value::as_str).and_then(path_from_uri) else {
                     return;
@@ -121,10 +158,11 @@ impl ClientState {
                             .collect()
                     })
                     .unwrap_or_default();
+                let version = params["version"].as_i64();
                 let store = diag_store.clone();
                 let tx = diag_tx.clone();
                 tokio::spawn(async move {
-                    store.write().await.insert(path.clone(), items);
+                    store.write().await.insert(path.clone(), (version, items));
                     let _ = tx.send(path);
                 });
             }
@@ -140,22 +178,30 @@ impl ClientState {
                     "synchronization": { "dynamicRegistration": false, "didSave": true },
                     "publishDiagnostics": { "relatedInformation": true, "versionSupport": true }
                 },
-                "workspace": { "workspaceFolders": true, "didChangeWatchedFiles": { "dynamicRegistration": false } }
+                "workspace": { "workspaceFolders": true, "didChangeWatchedFiles": { "dynamicRegistration": false } },
+                // without this, servers never report load/index progress and an
+                // empty diagnostics set would be indistinguishable from "still loading"
+                "window": { "workDoneProgress": true }
             },
             "initializationOptions": def.initialization.clone().unwrap_or(json!({}))
         });
         let result = tokio::time::timeout(INITIALIZE_TIMEOUT, rpc.request("initialize", init))
             .await
             .map_err(|_| "initialize timed out".to_string())??;
-        let sync_kind = match &result["capabilities"]["textDocumentSync"] {
-            Value::Number(n) => n.as_i64().unwrap_or(1),
-            Value::Object(o) => o.get("change").and_then(Value::as_i64).unwrap_or(1),
-            _ => 1,
-        };
         let pull = result["capabilities"]
             .get("diagnosticProvider")
             .is_some_and(|v| !v.is_null());
         rpc.notify("initialized", json!({})).await?;
+        // servers that never report progress are ready right away; give the
+        // others a moment to announce their first load
+        let progress_grace = progress.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            let p = progress_grace.lock().unwrap_or_else(|e| e.into_inner());
+            if !p.1 {
+                let _ = ready_tx.send(true);
+            }
+        });
         Ok(Arc::new(Self {
             pull,
             rpc,
@@ -164,17 +210,46 @@ impl ClientState {
             versions: Mutex::new(HashMap::new()),
             diagnostics,
             updates,
-            sync_kind,
+            ready: ready_rx,
         }))
     }
 
-    async fn touch(&self, path: &Path) -> Result<(), String> {
+    /// Wait until the server has finished loading: no `$/progress` cycle
+    /// active for a quiet period (rust-analyzer chains several — fetching,
+    /// crate graph, proc-macros, cache priming — with sub-millisecond gaps).
+    async fn wait_ready(&self, max: Duration) -> bool {
+        const QUIET: Duration = Duration::from_millis(600);
+        let mut rx = self.ready.clone();
+        let deadline = tokio::time::Instant::now() + max;
+        loop {
+            // wait for ready = true
+            while !*rx.borrow() {
+                let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if left.is_zero() {
+                    return false;
+                }
+                if tokio::time::timeout(left, rx.changed()).await.is_err() {
+                    return false;
+                }
+            }
+            // …and for it to stay true
+            match tokio::time::timeout(QUIET, rx.changed()).await {
+                Err(_) => return *rx.borrow(),
+                Ok(Ok(())) => continue,
+                Ok(Err(_)) => return *rx.borrow(),
+            }
+        }
+    }
+
+    async fn touch(&self, path: &Path) -> Result<i32, String> {
         let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
         let mut versions = self.versions.lock().await;
         let language = self.def.language_id(path);
         let lines = text.matches('\n').count() as u64 + 1;
+        let sent_version;
         match versions.get_mut(path) {
             None => {
+                sent_version = 1;
                 versions.insert(path.to_path_buf(), (1, lines));
                 self.rpc
                     .notify(
@@ -185,14 +260,13 @@ impl ClientState {
             }
             Some((v, prev_lines)) => {
                 *v += 1;
-                let changes = if self.sync_kind == 2 {
-                    // incremental sync: replace the whole previous document range
-                    json!([{ "range": { "start": { "line": 0, "character": 0 }, "end": { "line": *prev_lines + 1, "character": 0 } }, "text": text }])
-                } else {
-                    json!([{ "text": text }])
-                };
+                // a change without a range replaces the whole document — valid
+                // for full and incremental sync alike (a synthetic range past the
+                // old end is rejected by rust-analyzer, which then keeps the old text)
+                let changes = json!([{ "text": text }]);
                 *prev_lines = lines;
                 let version = *v;
+                sent_version = version;
                 self.rpc
                     .notify(
                         "textDocument/didChange",
@@ -207,7 +281,7 @@ impl ClientState {
                 json!({ "changes": [{ "uri": uri(path), "type": 2 }] }),
             )
             .await?;
-        Ok(())
+        Ok(sent_version)
     }
 
     /// Pull diagnostics for the document (servers with `diagnosticProvider`).
@@ -238,13 +312,24 @@ impl ClientState {
     }
 
     /// Wait (debounced) for a diagnostics push for `path`, racing a pull.
-    async fn wait_for(&self, path: &Path) -> Vec<Diagnostic> {
-        let mut rx = self.updates.subscribe();
+    /// `rx` must have been subscribed before the change was sent; pushes that
+    /// arrived while the server was still loading are placeholders and are
+    /// skipped.
+    async fn wait_for(
+        &self,
+        path: &Path,
+        mut rx: broadcast::Receiver<PathBuf>,
+        loaded_now: bool,
+        version: i32,
+    ) -> Vec<Diagnostic> {
         let wait = std::env::var("LZ_LSP_WAIT_MS")
             .ok()
             .and_then(|v| v.parse().ok())
             .map(Duration::from_millis)
             .unwrap_or(DIAGNOSTICS_WAIT);
+        if loaded_now {
+            while rx.try_recv().is_ok() {}
+        }
         let deadline = tokio::time::Instant::now() + wait;
         if self.pull
             && let Ok(Some(items)) = tokio::time::timeout(wait, self.pull(path)).await
@@ -252,6 +337,9 @@ impl ClientState {
         {
             return items;
         }
+        // a push is current when the server tags it with our version (or
+        // doesn't version at all); older ones describe the previous text
+        let current = |v: Option<i64>| v.is_none_or(|v| v >= version as i64);
         let mut got = false;
         loop {
             let timeout = if got {
@@ -260,18 +348,22 @@ impl ClientState {
                 deadline.saturating_duration_since(tokio::time::Instant::now())
             };
             match tokio::time::timeout(timeout, rx.recv()).await {
-                Ok(Ok(p)) if p == path => got = true,
+                Ok(Ok(p)) if p == path => {
+                    let v = self.diagnostics.read().await.get(path).and_then(|d| d.0);
+                    if current(v) {
+                        got = true;
+                    }
+                }
                 Ok(Ok(_)) => {}
                 Ok(Err(broadcast::error::RecvError::Lagged(_))) => got = true,
                 _ => break,
             }
         }
-        self.diagnostics
-            .read()
-            .await
-            .get(path)
-            .cloned()
-            .unwrap_or_default()
+        let store = self.diagnostics.read().await;
+        match store.get(path) {
+            Some((v, items)) if current(*v) => items.clone(),
+            _ => Vec::new(),
+        }
     }
 }
 
@@ -335,8 +427,21 @@ impl LspManager {
     /// Open/update the file and wait for fresh diagnostics.
     pub async fn diagnostics_after_edit(&self, path: &Path, worktree: &Path) -> Option<String> {
         let c = self.client_for(path, worktree).await?;
-        c.touch(path).await.ok()?;
-        let diags = c.wait_for(path).await;
+        let rx = c.updates.subscribe();
+        let was_ready = *c.ready.borrow();
+        let version = c.touch(path).await.ok()?;
+        let t = std::time::Instant::now();
+        if !c.wait_ready(READY_WAIT).await {
+            tracing::debug!(
+                server = c.def.id,
+                "still loading; skipping diagnostics for this edit"
+            );
+            return None;
+        }
+        if !was_ready {
+            tracing::info!(server = c.def.id, "language server ready in {:?}", t.elapsed());
+        }
+        let diags = c.wait_for(path, rx, !was_ready, version).await;
         report(path, &diags)
     }
 

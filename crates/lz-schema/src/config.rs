@@ -376,6 +376,10 @@ pub struct IndexConfig {
     /// Character budget of the `<symbols>` block (default 900).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_chars: Option<usize>,
+    /// Budget for the outline of the most relevant file appended to it
+    /// (default 3000; 0 disables).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skeleton_chars: Option<usize>,
 }
 
 /// `pool`: the built-in router over free-tier providers (`lunar/auto`).

@@ -229,6 +229,116 @@ fn parse_file(lang: Lang, rel: &str, src: &[u8]) -> (Vec<Symbol>, Vec<String>) {
     (symbols, idents)
 }
 
+/// Node kinds whose body is implementation detail: functions and methods.
+/// Types, traits, interfaces, impl blocks and classes keep their members
+/// (only the methods inside lose their bodies).
+fn body_field(lang: Lang, node: &Node) -> Option<&'static str> {
+    let k = node.kind();
+    let field = match lang {
+        Lang::Rust => match k {
+            "function_item" => "body",
+            _ => return None,
+        },
+        Lang::Python => match k {
+            "function_definition" => "body",
+            _ => return None,
+        },
+        Lang::JavaScript | Lang::TypeScript | Lang::Tsx => match k {
+            "function_declaration"
+            | "generator_function_declaration"
+            | "method_definition"
+            | "arrow_function"
+            | "function_expression"
+            | "function" => "body",
+            _ => return None,
+        },
+        Lang::Go => match k {
+            "function_declaration" | "method_declaration" => "body",
+            "func_literal" => "body",
+            _ => return None,
+        },
+    };
+    Some(field)
+}
+
+/// Whether `skeleton` can outline this file.
+pub fn supports(path: &Path) -> bool {
+    lang_of(path).is_some()
+}
+
+/// A file with function bodies replaced by `…` — signatures, type
+/// definitions, fields, trait/interface members and doc comments intact.
+/// Each output line is prefixed with its original line number so the model
+/// can `read` a body with `offset`/`limit` when it needs one.
+pub fn skeleton(path: &Path, src: &str) -> Option<String> {
+    let lang = lang_of(path)?;
+    let mut parser = Parser::new();
+    parser.set_language(&language(lang)).ok()?;
+    let tree = parser.parse(src.as_bytes(), None)?;
+    // outermost bodies only: byte ranges to elide, plus their line span
+    let mut elide: Vec<(usize, usize)> = Vec::new();
+    let mut stack = vec![tree.root_node()];
+    while let Some(node) = stack.pop() {
+        if let Some(field) = body_field(lang, &node)
+            && let Some(body) = node.child_by_field_name(field)
+            && body.end_position().row > body.start_position().row
+        {
+            elide.push((body.start_byte(), body.end_byte()));
+            continue; // nested functions are inside the body
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    elide.sort();
+    let bytes = src.as_bytes();
+    let mut out = String::new();
+    let mut pos = 0usize;
+    let mut kept: Vec<u8> = Vec::with_capacity(src.len());
+    for (start, end) in elide {
+        if start < pos {
+            continue;
+        }
+        kept.extend_from_slice(&bytes[pos..start]);
+        let (lines, marker) = if lang == Lang::Python {
+            // the block starts on the line after the colon
+            let rows = src[..start].matches('\n').count();
+            let end_rows = src[..end].matches('\n').count();
+            let n = end_rows - rows + 1;
+            (n.saturating_sub(1), format!("… # {n} lines"))
+        } else {
+            let n = src[start..end].matches('\n').count();
+            (n, format!("{{ … }} // {n} lines"))
+        };
+        // python bodies begin after the colon; others include the braces
+        kept.extend_from_slice(marker.as_bytes());
+        // keep the newline structure: bodies end at a line end; line numbers
+        // for what follows are restored from the original text below
+        kept.push(0u8); // sentinel: line-number jump
+        kept.extend_from_slice(&lines.to_string().into_bytes());
+        kept.push(0u8);
+        pos = end;
+    }
+    kept.extend_from_slice(&bytes[pos..]);
+    // number lines with original positions (the sentinel carries the skipped count)
+    let text = String::from_utf8_lossy(&kept);
+    let mut line_no = 1usize;
+    let mut skip_after_line: usize = 0;
+    for raw in text.split('\n') {
+        let mut line = raw.to_string();
+        if let Some(i) = line.find('\0') {
+            let rest = &line[i + 1..];
+            let j = rest.find('\0').unwrap_or(rest.len());
+            skip_after_line = rest[..j].parse().unwrap_or(0);
+            line = format!("{}{}", &line[..i], &rest[j + 1..]);
+        }
+        out.push_str(&format!("{line_no:>5}\t{line}\n"));
+        line_no += 1 + std::mem::take(&mut skip_after_line);
+    }
+    Some(out.trim_end().to_string())
+}
+
 fn mtime_of(meta: &std::fs::Metadata) -> u64 {
     meta.modified()
         .ok()
@@ -408,8 +518,9 @@ impl Index {
     }
 
     /// Symbols whose names appear in `text` (a user prompt), most specific
-    /// first, for the `<symbols>` prompt block. Empty when nothing matches.
-    pub fn relevant(&self, text: &str, max_chars: usize) -> String {
+    /// first, for the `<symbols>` prompt block; when `skeleton_chars > 0`
+    /// the outline of the file holding most matches follows, if it fits.
+    pub fn relevant(&self, text: &str, max_chars: usize, skeleton_chars: usize) -> String {
         let words: Vec<String> = text
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
             .filter(|w| w.len() >= 3 && w.len() <= 80 && !w.chars().all(|c| c.is_ascii_digit()))
@@ -452,6 +563,14 @@ impl Index {
             return String::new();
         }
         let mut out = String::from("<symbols>\n");
+        let mut per_file: HashMap<&str, usize> = HashMap::new();
+        for s in &picked {
+            *per_file.entry(s.file.as_str()).or_default() += 1;
+        }
+        let top_file = per_file
+            .iter()
+            .max_by_key(|(f, n)| (**n, std::cmp::Reverse((*f).to_string())))
+            .map(|(f, _)| f.to_string());
         for s in picked {
             let refs = st.refs.get(&s.name).map(|r| r.len()).unwrap_or(0);
             let line = format!(
@@ -473,6 +592,14 @@ impl Index {
             out.push_str(&line);
         }
         out.push_str("</symbols>");
+        if skeleton_chars > 0
+            && let Some(file) = top_file
+            && let Ok(src) = std::fs::read_to_string(self.worktree.join(&file))
+            && let Some(sk) = skeleton(Path::new(&file), &src)
+            && sk.len() <= skeleton_chars
+        {
+            out.push_str(&format!("\n<skeleton file=\"{file}\">\n{sk}\n</skeleton>"));
+        }
         out
     }
 }
@@ -506,6 +633,34 @@ mod tests {
     }
 
     #[test]
+    fn skeleton_elides_bodies_keeps_types() {
+        let src = "/// Config of the app.\npub struct Config {\n    pub name: String,\n    pub retries: u32,\n}\n\nimpl Config {\n    /// Load it.\n    pub fn load(path: &str) -> Config {\n        let text = std::fs::read_to_string(path).unwrap();\n        parse(&text)\n    }\n}\n\nfn parse(t: &str) -> Config {\n    todo!()\n}\n";
+        let sk = skeleton(Path::new("a.rs"), src).unwrap();
+        assert!(sk.contains("pub name: String"), "{sk}");
+        assert!(sk.contains("/// Load it."), "{sk}");
+        assert!(
+            sk.contains("pub fn load(path: &str) -> Config { … } // 3 lines"),
+            "{sk}"
+        );
+        assert!(!sk.contains("read_to_string"), "{sk}");
+        assert!(sk.contains("    9\t    pub fn load"), "{sk}");
+        // the line after the elided body keeps its original number
+        assert!(sk.contains("   13\t}"), "{sk}");
+        assert!(
+            sk.contains("   15\tfn parse(t: &str) -> Config { … } // 2 lines"),
+            "{sk}"
+        );
+        let py =
+            "class A:\n    def run(self, x):\n        y = x + 1\n        return y\n\ndef top():\n    pass\n";
+        let sk = skeleton(Path::new("a.py"), py).unwrap();
+        assert!(
+            sk.contains("    2\t    def run(self, x):\n    3\t        … # 2 lines\n    5\t"),
+            "{sk}"
+        );
+        assert!(!sk.contains("y = x + 1"));
+    }
+
+    #[test]
     fn index_refresh_and_relevance() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -525,10 +680,11 @@ mod tests {
         assert_eq!(idx.stats().0, 2);
         assert_eq!(idx.definitions("render_matrix").len(), 1);
         assert_eq!(idx.references("render_matrix"), vec!["src/main.rs".to_string()]);
-        let block = idx.relevant("please make the matrix export use render_matrix", 800);
+        let block = idx.relevant("please make the matrix export use render_matrix", 800, 2000);
+        assert!(block.contains("<skeleton file=\"src/lib.rs\">"), "{block}");
         assert!(block.contains("fn render_matrix — src/lib.rs:1"), "{block}");
         assert!(block.contains("struct Matrix"), "{block}");
-        assert!(idx.relevant("hello there", 800).is_empty());
+        assert!(idx.relevant("hello there", 800, 2000).is_empty());
         // a fresh Index instance loads the cache and sees no changes
         let again = Index::new(dir.path().to_path_buf(), cache.path());
         again.refresh();

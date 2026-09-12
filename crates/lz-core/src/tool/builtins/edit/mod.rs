@@ -212,10 +212,13 @@ async fn after_write(
         Some(json!({ "diff": diff, "filediff": filediff, "diagnostics": {} })),
     );
     let mut output = first_line.to_string();
+    let mut diagnostics = json!({});
     if let Some(block) = ctx.engine.lsp_diagnostics_after_edit(path).await {
+        let errors = block.matches("ERROR [").count();
         output.push_str(&format!(
-            "\n\nLSP errors detected in this file, please fix:\n{block}"
+            "\n\nThe language server reports {errors} error(s) in this file — fix them before running builds or tests:\n{block}"
         ));
+        diagnostics = json!({ "errors": errors, "text": block });
     }
     ToolResult {
         title: path
@@ -224,7 +227,7 @@ async fn after_write(
             .display()
             .to_string(),
         output,
-        metadata: json!({ "diff": diff, "filediff": filediff, "diagnostics": {} }),
+        metadata: json!({ "diff": diff, "filediff": filediff, "diagnostics": diagnostics }),
         attachments: Vec::new(),
     }
 }
@@ -316,7 +319,7 @@ impl Tool for EditTool {
             write_with_dirs(&path, &out).map_err(ToolError::other)?;
             let new = ctx
                 .engine
-                .format_file(&path)
+                .format_file(&path, None)
                 .await
                 .unwrap_or_else(|| text.to_string());
             (String::new(), new, diff)
@@ -381,7 +384,7 @@ impl Tool for EditTool {
             write_with_dirs(&path, &out).map_err(ToolError::other)?;
             let formatted = ctx
                 .engine
-                .format_file(&path)
+                .format_file(&path, Some(source))
                 .await
                 .unwrap_or_else(|| next.to_string());
             let diff = trim_diff(&unified_diff(
@@ -496,7 +499,7 @@ impl Tool for WriteTool {
         write_with_dirs(&path, &out).map_err(ToolError::other)?;
         let formatted = ctx
             .engine
-            .format_file(&path)
+            .format_file(&path, exists.then_some(old))
             .await
             .unwrap_or_else(|| new.to_string());
         let mut result = after_write(&ctx, &path, &diff, old, &formatted, "Wrote file successfully.").await;

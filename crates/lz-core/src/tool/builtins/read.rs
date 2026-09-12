@@ -32,6 +32,9 @@ struct Args {
     offset: Option<usize>,
     #[serde(default)]
     limit: Option<usize>,
+    /// Outline only: signatures, types, fields, doc comments; function bodies elided.
+    #[serde(default)]
+    skeleton: bool,
 }
 
 pub struct ReadTool;
@@ -271,7 +274,8 @@ impl Tool for ReadTool {
             "properties": {
                 "filePath": { "type": "string", "description": "Absolute path" },
                 "offset": { "type": "integer", "description": "First line (1-based)" },
-                "limit": { "type": "integer", "description": "Max lines (default 2000)" }
+                "limit": { "type": "integer", "description": "Max lines (default 2000)" },
+                "skeleton": { "type": "boolean", "description": "Outline only (signatures, types, fields, docs; bodies elided) — ~10x fewer tokens; Rust/Python/JS/TS/Go" }
             },
             "required": ["filePath"]
         })
@@ -367,6 +371,25 @@ impl Tool for ReadTool {
                 path.display()
             )));
         }
+        if args.skeleton {
+            let src = std::fs::read_to_string(&path).map_err(ToolError::other)?;
+            let Some(sk) = crate::index::skeleton(&path, &src) else {
+                return Err(ToolError::Invalid(
+                    "skeleton is only available for Rust, Python, JavaScript/TypeScript and Go files".into(),
+                ));
+            };
+            let total = src.matches('\n').count() + 1;
+            let output = format!(
+                "<file>\n{sk}\n</file>\n({total} lines; bodies elided — read with offset/limit for one)"
+            );
+            ctx.engine.lsp_touch(&path).await;
+            return Ok(ToolResult {
+                title: format!("{title} (skeleton)"),
+                metadata: json!({ "preview": sk.lines().take(20).collect::<Vec<_>>().join("\n"), "truncated": false, "loaded": [], "skeleton": true }),
+                output,
+                attachments: Vec::new(),
+            });
+        }
         let offset = args.offset.unwrap_or(1).max(1);
         let limit = args.limit.unwrap_or(DEFAULT_READ_LIMIT);
         let file = read_lines(&path, offset, limit).map_err(ToolError::other)?;
@@ -377,6 +400,12 @@ impl Tool for ReadTool {
             )));
         }
         let mut output = render(&path, &file, offset);
+        if args.offset.is_none() && args.limit.is_none() && file.count > 400 && crate::index::supports(&path)
+        {
+            output.push_str(
+                "\n(tip: `skeleton: true` returns this file's outline in a fraction of the tokens)",
+            );
+        }
         ctx.engine.lsp_touch(&path).await;
         if !loaded.is_empty() {
             output.push_str(&format!(

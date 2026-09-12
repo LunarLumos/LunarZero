@@ -435,7 +435,7 @@ impl Tool for ApplyPatchTool {
             }
             let target = c.move_path.clone().unwrap_or_else(|| c.path.clone());
             if c.kind != "delete" {
-                let _ = ctx.engine.format_file(&target).await;
+                let _ = ctx.engine.format_file(&target, None).await;
                 ctx.engine.bus.publish(Event::FileEdited {
                     file: target.display().to_string(),
                 });

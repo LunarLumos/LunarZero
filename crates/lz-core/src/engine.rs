@@ -57,6 +57,8 @@ pub struct Engine {
     /// Free-pool router (usage ledger, cooldowns, `auto` resolution).
     pub router: crate::provider::router::Router,
     pub project_map: crate::project_map::Cache,
+    /// Detected formatters (reset when config reloads).
+    pub formatters: std::sync::Mutex<Option<Vec<crate::format::Formatter>>>,
     /// Tree-sitter symbol index of the worktree (built in the background).
     pub index: Arc<crate::index::Index>,
     config: ArcSwap<Config>,
@@ -106,10 +108,12 @@ impl Engine {
             &project.worktree,
         );
         let commands = crate::command::build(&loaded.raw, &project.worktree, &skills);
+        // on by default: a server is only started when it is on PATH, and edits
+        // get its diagnostics back in ~200 ms instead of after a full build
         let lsp_enabled = match &loaded.config.lsp {
             Some(lz_schema::config::LspConfig::Enabled(b)) => *b,
             Some(lz_schema::config::LspConfig::Servers(_)) => true,
-            None => false,
+            None => true,
         };
         let mcp_timeout = loaded
             .config
@@ -160,6 +164,7 @@ impl Engine {
             lsp: crate::lsp::LspManager::new(lsp_enabled),
             router: crate::provider::router::Router::new(Some(quota_path)),
             project_map: crate::project_map::Cache::default(),
+            formatters: std::sync::Mutex::new(None),
             index: symbol_index,
             config: ArcSwap::from_pointee(config),
             raw_config: ArcSwap::from_pointee(raw),
@@ -333,6 +338,7 @@ impl Engine {
 
     /// Reload config + providers + agents (after `auth login`, config edits).
     pub async fn reload(&self) -> anyhow::Result<()> {
+        *self.formatters.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let loaded = crate::config::load(crate::config::LoadInput {
             paths: &self.paths,
             directory: &self.directory,
@@ -727,8 +733,31 @@ impl Engine {
         }
     }
     /// Run the configured formatter; returns the new content when it changed.
-    pub async fn format_file(&self, _path: &Path) -> Option<String> {
-        None
+    /// Run the project's formatter on a just-written file; the new content
+    /// when it changed. Detection is cached for the config's lifetime.
+    pub async fn format_file(&self, path: &Path, previous: Option<&str>) -> Option<String> {
+        let formatters = {
+            let cfg = self.config();
+            let mut cache = self.formatters.lock().unwrap_or_else(|e| e.into_inner());
+            match &*cache {
+                Some(f) => f.clone(),
+                None => {
+                    let f = crate::format::detect(&self.project.worktree, cfg.formatter.as_ref());
+                    if !f.is_empty() {
+                        tracing::info!(
+                            "formatters: {}",
+                            f.iter().map(|x| x.name.as_str()).collect::<Vec<_>>().join(", ")
+                        );
+                    }
+                    *cache = Some(f.clone());
+                    f
+                }
+            }
+        };
+        if formatters.is_empty() {
+            return None;
+        }
+        crate::format::run(&self.project.worktree, &formatters, path, previous).await
     }
     /// LSP diagnostics block for a just-edited file, if any errors.
     pub async fn lsp_diagnostics_after_edit(&self, path: &Path) -> Option<String> {
