@@ -70,11 +70,26 @@ fn lower_assistant(content: &[ContentPart], send_reasoning: bool) -> Result<Valu
         match part {
             ContentPart::Text { text: t } => text.push_str(t),
             ContentPart::Reasoning { text: t, .. } => reasoning.push_str(t),
-            ContentPart::ToolCall { id, name, input } => tool_calls.push(json!({
-                "id": id,
-                "type": "function",
-                "function": { "name": name, "arguments": input.to_string() }
-            })),
+            ContentPart::ToolCall {
+                id,
+                name,
+                input,
+                extra,
+            } => {
+                let mut call = json!({
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": name, "arguments": input.to_string() }
+                });
+                // Gemini 3 rejects a later turn unless the thought signature it
+                // attached to the call comes back on it
+                if let Some(Value::Object(ex)) = extra {
+                    for (k, v) in ex {
+                        call[k] = v.clone();
+                    }
+                }
+                tool_calls.push(call);
+            }
             _ => {
                 return Err(LlmError::InvalidRequest {
                     message: "OpenAI Chat assistant messages support only text, reasoning and tool-call"
@@ -398,7 +413,11 @@ impl StreamParser for Parser {
                     id: id.clone(),
                     name: name.clone(),
                     input: String::new(),
+                    extra: None,
                 });
+                if let Some(ec) = td.get("extra_content").filter(|v| v.is_object()) {
+                    tool.extra = Some(json!({ "extra_content": ec }));
+                }
                 if tool.id.is_empty() {
                     tool.id = id;
                 }
@@ -598,6 +617,7 @@ mod tests {
                         id: "c1".into(),
                         name: "read".into(),
                         input: json!({"filePath": "x"}),
+                        extra: None,
                     }],
                 },
                 LlmMessage::Tool {
@@ -628,5 +648,44 @@ mod tests {
         );
         assert_eq!(msgs[3]["role"], "tool");
         assert_eq!(wire.body["stream"], true);
+    }
+
+    #[test]
+    fn tool_call_extra_content_round_trips() {
+        // Gemini attaches a thought signature to the call and requires it back
+        let mut p = OpenAiChat.parser();
+        let mut events = Vec::new();
+        events.extend(p.step(r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","type":"function","function":{"name":"read","arguments":"{\"filePath\":\"a\"}"},"extra_content":{"google":{"thought_signature":"SIG"}}}]}}]}"#).unwrap());
+        events.extend(
+            p.step(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#)
+                .unwrap(),
+        );
+        events.extend(p.halt().unwrap());
+        let extra = events
+            .iter()
+            .find_map(|e| match e {
+                LlmEvent::ToolCall { extra, .. } => Some(extra.clone()),
+                _ => None,
+            })
+            .flatten()
+            .expect("extra captured");
+        assert_eq!(extra["extra_content"]["google"]["thought_signature"], "SIG");
+        let req = LlmRequest {
+            model_id: "gemini".into(),
+            messages: vec![LlmMessage::Assistant {
+                content: vec![ContentPart::ToolCall {
+                    id: "c1".into(),
+                    name: "read".into(),
+                    input: serde_json::json!({ "filePath": "a" }),
+                    extra: Some(extra),
+                }],
+            }],
+            ..Default::default()
+        };
+        let wire = OpenAiChat.build(&req).unwrap();
+        assert_eq!(
+            wire.body["messages"][0]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+            "SIG"
+        );
     }
 }

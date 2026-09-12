@@ -146,12 +146,14 @@ impl ToolCtx {
             .await
     }
 
-    /// Text of the user's latest own message (synthetic parts excluded).
+    /// Text of the user's last few own messages (synthetic parts excluded),
+    /// newest first — what "the user asked for" means for the install gate.
     pub fn last_user_text(&self) -> String {
         self.messages
             .iter()
             .rev()
-            .find(|m| matches!(m.info, lz_schema::session::Message::User(_)))
+            .filter(|m| matches!(m.info, lz_schema::session::Message::User(_)))
+            .take(3)
             .map(|m| {
                 m.parts
                     .iter()
@@ -166,7 +168,8 @@ impl ToolCtx {
                     .collect::<Vec<_>>()
                     .join("\n")
             })
-            .unwrap_or_default()
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     pub fn directory(&self) -> &std::path::Path {

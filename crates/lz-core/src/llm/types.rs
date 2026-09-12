@@ -31,6 +31,10 @@ pub enum ContentPart {
         id: String,
         name: String,
         input: Value,
+        /// Provider passthrough replayed with the call (e.g. Gemini's
+        /// `extra_content.google.thought_signature`, mandatory on later turns).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra: Option<Value>,
     },
     ToolResult {
         id: String,
@@ -205,6 +209,8 @@ pub enum LlmEvent {
         id: String,
         name: String,
         input: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extra: Option<Value>,
     },
     StepFinish {
         index: u32,

@@ -585,7 +585,28 @@ impl Router {
             || lower.contains("rpd")
             || lower.contains("tokens per day");
         let mut l = self.ledger.lock().unwrap();
+        // "this model needs a higher tier / another harness" is about the
+        // model, not the key: bench the model for a day, not the provider
+        let model_specific = [
+            "subscription tier",
+            "not available in your",
+            "only available on",
+            "requires a subscription",
+            "usage credits",
+            "upgrade",
+            "this model",
+            "model is not",
+        ]
+        .iter()
+        .any(|k| lower.contains(k));
         let cooldown = match err {
+            LlmError::Authentication { .. } if model_specific => {
+                let u = l.models.entry(Self::key(model)).or_default();
+                u.failures += 1;
+                u.cooldown_until = now + 24 * 60 * MINUTE;
+                u.last_error = msg.clone();
+                Duration::from_secs(24 * 3600)
+            }
             LlmError::Authentication { .. } => {
                 l.providers
                     .insert(model.provider_id.clone(), (now + 60 * MINUTE, msg.clone()));
@@ -616,10 +637,11 @@ impl Router {
                 let too_large =
                     lower.contains("too large") || lower.contains("reduce your message") || *status == 413;
                 let ms = match *status {
-                    _ if too_large => 3 * MINUTE, // fine for smaller requests
-                    404 => 24 * 60 * MINUTE,      // model id gone
-                    400 | 422 => 30 * MINUTE,     // rejected request shape (often our schema)
-                    402 | 403 => 6 * 60 * MINUTE, // billing / not entitled
+                    _ if too_large => 3 * MINUTE,  // fine for smaller requests
+                    404 | 410 => 24 * 60 * MINUTE, // model id gone / retired
+                    400 | 422 => 30 * MINUTE,      // rejected request shape (often our schema)
+                    402 => 24 * 60 * MINUTE,       // paid model: no point retrying today
+                    403 => 6 * 60 * MINUTE,        // not entitled
                     429 => {
                         if daily {
                             next_utc_midnight(now).saturating_sub(now)
@@ -1445,6 +1467,36 @@ mod tests {
         assert!(why.contains("requests/min"), "{why}");
         assert!(wait.unwrap() <= 60_000);
         assert!(r.why(&reg, "a/nope", &need()).is_none());
+    }
+
+    #[test]
+    fn model_specific_auth_errors_do_not_bench_the_provider() {
+        let reg = registry(vec![
+            model("m", "premium", 90, 50, None),
+            model("m", "basic", 60, 70, None),
+        ]);
+        let r = Router::new(None);
+        let premium = reg.get("m", "premium").unwrap().clone();
+        let d = r.record_failure(
+            &premium,
+            &LlmError::Authentication {
+                message: "This model is not available in your subscription tier".into(),
+            },
+        );
+        assert_eq!(d, Duration::from_secs(24 * 3600));
+        // the sibling model on the same key still serves
+        let pick = r.pick(&reg, Strategy::Auto, &need(), "s", &[], 0).unwrap();
+        assert_eq!(pick.model.id, "basic");
+        // a paid-only model (402) is out for the day too
+        let paid = LlmError::Provider {
+            status: 402,
+            message: "this model requires a subscription or usage credits".into(),
+            retry_after_ms: None,
+            headers: Default::default(),
+            body: None,
+        };
+        let basic = reg.get("m", "basic").unwrap().clone();
+        assert_eq!(r.record_failure(&basic, &paid), Duration::from_secs(24 * 3600));
     }
 
     #[test]

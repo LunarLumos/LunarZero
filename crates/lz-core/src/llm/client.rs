@@ -96,25 +96,14 @@ fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
 }
 
 fn classify_http_error(status: u16, headers: &reqwest::header::HeaderMap, body: String) -> LlmError {
-    let message = serde_json::from_str::<serde_json::Value>(&body)
-        .ok()
-        .and_then(|v| {
-            v.get("error")
-                .and_then(|e| {
-                    e.get("message")
-                        .and_then(|m| m.as_str())
-                        .map(str::to_string)
-                        .or_else(|| e.as_str().map(str::to_string))
-                })
-                .or_else(|| v.get("message").and_then(|m| m.as_str()).map(str::to_string))
-        })
-        .unwrap_or_else(|| {
-            if body.is_empty() {
-                format!("HTTP {status}")
-            } else {
-                body.chars().take(500).collect()
-            }
-        });
+    // `{error:{message}}`, `{message}`, or Gemini's `[{error:{message}}]`
+    let message = lz_schema::session::json_error_message(&body).unwrap_or_else(|| {
+        if body.is_empty() {
+            format!("HTTP {status}")
+        } else {
+            body.chars().take(500).collect()
+        }
+    });
     let lower = message.to_lowercase();
     let overflow = lower.contains("context length")
         || lower.contains("context window")

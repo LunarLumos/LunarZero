@@ -105,6 +105,30 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
+/// Server-specific initialization options. typescript-language-server needs
+/// a `typescript` install: the project's own, else the global npm one.
+fn init_options(def: &ServerDef, root: &Path) -> Value {
+    let mut opts = def.initialization.clone().unwrap_or(json!({}));
+    if def.id == "typescript" {
+        let local = root.join("node_modules/typescript/lib");
+        let path = if local.join("tsserver.js").exists() {
+            Some(local)
+        } else {
+            std::process::Command::new("npm")
+                .args(["root", "-g"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()).join("typescript/lib"))
+                .filter(|p| p.join("tsserver.js").exists())
+        };
+        if let Some(p) = path {
+            opts["tsserver"] = json!({ "path": p.display().to_string() });
+        }
+    }
+    opts
+}
+
 impl ClientState {
     async fn start(def: &'static ServerDef, root: PathBuf) -> Result<Arc<Self>, String> {
         let (bin, args) = def.command.split_first().ok_or("empty command")?;
@@ -183,7 +207,7 @@ impl ClientState {
                 // empty diagnostics set would be indistinguishable from "still loading"
                 "window": { "workDoneProgress": true }
             },
-            "initializationOptions": def.initialization.clone().unwrap_or(json!({}))
+            "initializationOptions": init_options(def, &root)
         });
         let result = tokio::time::timeout(INITIALIZE_TIMEOUT, rpc.request("initialize", init))
             .await

@@ -52,6 +52,27 @@ fn secret_var(name: &str) -> bool {
         || n == "NPM_CONFIG_AUTHTOKEN"
 }
 
+/// bubblewrap arguments: the whole filesystem visible, credential
+/// locations replaced by empty tmpfs (directories) or /dev/null (files).
+pub fn bwrap_args(protected: &[PathBuf]) -> Vec<String> {
+    let mut a: Vec<String> = ["--dev-bind", "/", "/", "--die-with-parent", "--unshare-pid"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    for path in protected {
+        let p = path.display().to_string();
+        if path.is_dir() {
+            a.push("--tmpfs".into());
+            a.push(p);
+        } else if path.is_file() {
+            a.push("--ro-bind".into());
+            a.push("/dev/null".into());
+            a.push(p);
+        }
+    }
+    a
+}
+
 impl Sandbox {
     pub fn new(paths: &Paths) -> Self {
         let real_home = paths.home.clone();
@@ -167,14 +188,7 @@ impl Sandbox {
             }
             Isolation::Os => {
                 let mut c = tokio::process::Command::new("bwrap");
-                c.args(["--dev-bind", "/", "/", "--die-with-parent"]);
-                for path in &self.protected {
-                    if path.is_dir() {
-                        c.arg("--tmpfs").arg(path);
-                    } else if path.is_file() {
-                        c.arg("--ro-bind").arg("/dev/null").arg(path);
-                    }
-                }
+                c.args(bwrap_args(&self.protected));
                 c.arg("--").arg(cmd).args(args);
                 c
             }
@@ -230,6 +244,27 @@ mod tests {
         assert!(!secret_var("HOME"));
         assert!(!secret_var("SSH_AUTH_SOCK"));
         assert!(!secret_var("CARGO_HOME"));
+    }
+
+    #[test]
+    fn bwrap_masks_only_existing_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("auth.json");
+        std::fs::write(&f, "x").unwrap();
+        let d = dir.path().join("ssh");
+        std::fs::create_dir(&d).unwrap();
+        let missing = dir.path().join("nope");
+        let a = bwrap_args(&[f.clone(), d.clone(), missing]);
+        assert_eq!(
+            &a[..5],
+            &["--dev-bind", "/", "/", "--die-with-parent", "--unshare-pid"]
+        );
+        assert!(
+            a.windows(3)
+                .any(|w| w == ["--ro-bind", "/dev/null", &f.display().to_string()])
+        );
+        assert!(a.windows(2).any(|w| w == ["--tmpfs", &d.display().to_string()]));
+        assert!(!a.iter().any(|x| x.contains("nope")));
     }
 
     #[tokio::test]

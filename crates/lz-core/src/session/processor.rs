@@ -195,7 +195,13 @@ impl Ctx {
             .all(|(t, i)| *t == name && i.to_string() == input_s)
     }
 
-    async fn on_tool_call(&mut self, id: String, name: String, input: Value) -> Result<(), String> {
+    async fn on_tool_call(
+        &mut self,
+        id: String,
+        name: String,
+        input: Value,
+        extra: Option<Value>,
+    ) -> Result<(), String> {
         if self.message.summary == Some(true) {
             return Err(format!("Tool call not allowed while generating summary: {name}"));
         }
@@ -208,7 +214,13 @@ impl Ctx {
         // mark running
         {
             let call = self.calls.get_mut(&id).expect("ensured");
-            if let PartKind::Tool { tool, state, .. } = &mut call.part.kind {
+            if let PartKind::Tool {
+                tool,
+                state,
+                metadata,
+                ..
+            } = &mut call.part.kind
+            {
                 *tool = name.clone();
                 *state = ToolState::Running {
                     input: input.clone(),
@@ -216,6 +228,9 @@ impl Ctx {
                     metadata: None,
                     time: ToolTimeRunning { start: now_ms() },
                 };
+                if let Some(ex) = extra {
+                    *metadata = Some(serde_json::json!({ "provider": ex }));
+                }
             }
             let part = call.part.clone();
             self.save_part(&part).await;
@@ -485,8 +500,13 @@ impl Ctx {
                 self.ensure_tool_call(&id, &name).await;
             }
             LlmEvent::ToolInputEnd { .. } => {}
-            LlmEvent::ToolCall { id, name, input } => {
-                self.on_tool_call(id, name, input).await?;
+            LlmEvent::ToolCall {
+                id,
+                name,
+                input,
+                extra,
+            } => {
+                self.on_tool_call(id, name, input, extra).await?;
             }
             LlmEvent::StepFinish { reason, usage, .. } => {
                 // all tools must settle before the step is closed

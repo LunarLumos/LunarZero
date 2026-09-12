@@ -166,6 +166,22 @@ class H(BaseHTTPRequestHandler):
         elif "scenario_bg" in all_user:
             if step == 0: call("task", {"description": "count things", "prompt": "scenario_child count", "subagent_type": "general", "background": True})
             else: text("Started the background task; carrying on.")
+        elif "lsp_probe" in all_user:
+            lang = [w for w in all_user.split() if w in ("ts","py","go")][0]
+            files = {
+              "ts": ("src/app.ts", "export function add(a: number, b: number): number {\n  const n: number = 'oops';\n  return a + b + n;\n}\n", "export function add(a: number, b: number): number {\n    const n: number = 1;\n  return a+b+n\n}\n"),
+              "py": ("app.py", "def add(a: int, b: int) -> int:\n    n: int = 'oops'\n    return a + b + n\n", "def add(a: int, b: int) -> int:\n    n: int =  1\n    return a+b+n\n"),
+              "go": ("main.go", "package main\n\nimport \"fmt\"\n\nfunc add(a int, b int) int {\n\tvar n int = \"oops\"\n\treturn a + b + n\n}\n\nfunc main() { fmt.Println(add(1, 2)) }\n", "package main\n\nimport \"fmt\"\n\nfunc add(a int, b int) int {\n    var n int = 1\n    return a + b + n\n}\n\nfunc main() { fmt.Println(add(1, 2)) }\n"),
+            }[lang]
+            healed = "language server" in user_text
+            if not healed:
+                if step == 0: call("write", {"filePath": files[0], "content": files[1]})
+                else: text("Wrote it; all good.")
+            else:
+                idx = next(i for i, m in enumerate(msgs) if m["role"] == "user" and "language server" in (m["content"] if isinstance(m["content"], str) else " ".join(p.get("text","") for p in m["content"])))
+                after = [m for m in msgs[idx:] if m["role"] == "tool"]
+                if len(after) == 0: call("write", {"filePath": files[0], "content": files[2]}, cid="call_fix")
+                else: text("LSP-HEALED: " + tool_results[-1]["content"][:160].replace("\n", " / "))
         elif "scenario2" in user_text:
             if step == 0: call("bash", {"command": "rm -rf never"})
             else: text("Result: " + tool_results[-1]["content"][:120].replace("\n", " / "))

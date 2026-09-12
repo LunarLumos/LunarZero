@@ -114,6 +114,8 @@ pub struct PendingTool {
     pub id: String,
     pub name: String,
     pub input: String,
+    /// provider fields on the call that must be echoed back (see `LlmEvent::ToolCall::extra`)
+    pub extra: Option<Value>,
 }
 
 pub fn parse_tool_input(name: &str, raw: &str) -> Result<Value, LlmError> {
@@ -135,11 +137,13 @@ pub fn finish_tool(tool: &PendingTool, out: &mut Vec<LlmEvent>) {
             id: tool.id.clone(),
             name: tool.name.clone(),
             input,
+            extra: tool.extra.clone(),
         }),
         Err(e) => out.push(LlmEvent::ToolCall {
             id: tool.id.clone(),
             name: "invalid".into(),
             input: serde_json::json!({ "tool": tool.name, "error": e.to_string(), "raw": tool.input }),
+            extra: tool.extra.clone(),
         }),
     }
 }

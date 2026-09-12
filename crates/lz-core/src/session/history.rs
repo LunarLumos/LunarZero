@@ -311,9 +311,14 @@ pub fn to_llm_messages(msgs: &[MessageWithParts], opts: &ToModelOptions) -> Vec<
                             }
                         }
                         PartKind::Tool {
-                            call_id, tool, state, ..
+                            call_id,
+                            tool,
+                            state,
+                            metadata,
+                            ..
                         } => {
                             assistant.push(ContentPart::ToolCall {
+                                extra: metadata.as_ref().and_then(|m| m.get("provider")).cloned(),
                                 id: call_id.clone(),
                                 name: tool.clone(),
                                 input: if old_turn {

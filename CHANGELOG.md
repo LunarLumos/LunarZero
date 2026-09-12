@@ -4,6 +4,12 @@ All notable changes, newest first. Dates are commit dates on `main`.
 
 ## Unreleased (0.1.0 line)
 
+### 2026-09-12 — verified against real servers
+- Gemini 3 tool calls carry a `thought_signature` that must be echoed on later turns; it is now captured from the stream, stored on the tool part and replayed. Before this, every multi-step tool turn on Gemini 3 failed with HTTP 400 after the first call. Verified live.
+- Provider errors in array form (`[{"error":…}]`, Gemini) are parsed; model-specific auth errors ("not available in your subscription tier", "only available on agentic harnesses") cool down the model for a day instead of benching the whole provider; 402 (paid model) and 410 (retired) cool down for a day.
+- `typescript-language-server`: `tsserver` is located in the project's `node_modules` or the global npm root and passed explicitly. pyright, gopls and tsserver diagnostics, and ruff/gofmt/prettier formatting, verified live; the `bwrap` sandbox verified in a Debian container.
+- The install gate considers the user's last three messages.
+
 ### 2026-09-12 — trust, measurement, autonomy
 
 **Safety and CI**

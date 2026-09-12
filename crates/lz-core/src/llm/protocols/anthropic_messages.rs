@@ -74,7 +74,7 @@ fn assistant_blocks(content: &[ContentPart]) -> Result<Vec<Value>, LlmError> {
                     blocks.push(json!({ "type": "redacted_thinking", "data": data }));
                 }
             }
-            ContentPart::ToolCall { id, name, input } => {
+            ContentPart::ToolCall { id, name, input, .. } => {
                 blocks.push(json!({ "type": "tool_use", "id": id, "name": name, "input": input }));
             }
             _ => {
@@ -382,6 +382,7 @@ impl StreamParser for Parser {
                             id: cb["id"].as_str().unwrap_or("").to_string(),
                             name: cb["name"].as_str().unwrap_or("").to_string(),
                             input: String::new(),
+                            extra: None,
                         };
                         self.lifecycle.step_start(&mut out);
                         out.push(LlmEvent::ToolInputStart {
@@ -526,6 +527,7 @@ mod tests {
                             metadata: Some(json!({ "signature": "sig" })),
                         },
                         ContentPart::ToolCall {
+                            extra: None,
                             id: "toolu_1".into(),
                             name: "read".into(),
                             input: json!({ "filePath": "a.rs" }),
