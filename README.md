@@ -220,6 +220,12 @@ A native tree-sitter index (Rust, Python, JavaScript/TypeScript, Go, Java, C/C++
 
 Data lives in `~/.local/share/lunarzero` (sessions, auth, snapshots), `~/.config/lunarzero` (config, themes), `~/.local/state/lunarzero` (quota ledger, TUI state).
 
+## Docs
+
+- [docs/architecture.md](docs/architecture.md) — the turn loop, the router's scoring and failure state machine, the permission layering, compaction, the index/LSP/formatter pipeline, with diagrams.
+- [BENCHMARKS.md](BENCHMARKS.md) — measured numbers and the scripts that produce them.
+- [CHANGELOG.md](CHANGELOG.md) · [CONTRIBUTING.md](CONTRIBUTING.md) (how to add a skill or MCP server to the catalog) · [SECURITY.md](SECURITY.md).
+
 ## Under the hood
 
 ```
