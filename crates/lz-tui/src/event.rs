@@ -112,9 +112,17 @@ pub async fn run(api: Arc<dyn EngineApi>, opts: TuiOptions) -> anyhow::Result<()
                     }
                 }
                 Suspend::Stop => {
-                    let _ = guard.suspend(|| unsafe {
-                        libc::kill(0, libc::SIGTSTP);
-                    });
+                    // ctrl+z: hand the terminal back to the shell (no job control on Windows)
+                    #[cfg(unix)]
+                    {
+                        let _ = guard.suspend(|| unsafe {
+                            libc::kill(0, libc::SIGTSTP);
+                        });
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        app.update(Msg::Error("suspend is not available on this platform".into()));
+                    }
                 }
             }
             events = Some(EventStream::new());

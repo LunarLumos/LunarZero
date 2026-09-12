@@ -109,6 +109,14 @@ pub fn install_panic_hook() {
 
 /// Query the terminal's default background/foreground (OSC 11 / OSC 10).
 /// Must run in raw mode *before* the crossterm event stream starts.
+/// Ask the terminal for its background/foreground colours (OSC 10/11).
+/// Needs `poll` on stdin; on Windows the palette falls back to the theme's own.
+#[cfg(not(unix))]
+pub fn query_colors(_timeout: Duration) -> (Option<Rgba>, Option<Rgba>) {
+    (None, None)
+}
+
+#[cfg(unix)]
 pub fn query_colors(timeout: Duration) -> (Option<Rgba>, Option<Rgba>) {
     if std::env::var("LZ_NO_OSC").is_ok() || std::env::var("TERM").map(|t| t == "dumb").unwrap_or(false) {
         return (None, None);
