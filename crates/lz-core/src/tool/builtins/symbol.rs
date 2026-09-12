@@ -53,8 +53,31 @@ impl Tool for SymbolTool {
         .map_err(ToolError::other)?;
         let mut out = String::new();
         if defs.is_empty() {
+            // the language server knows languages the index doesn't (and macros, generated code)
+            if let Some(l) = ctx.engine.lsp.lookup(&name, &ctx.engine.project.worktree).await {
+                out.push_str(&format!("Definitions of `{name}` (via {}):\n", l.server));
+                for (file, line, kind) in &l.definitions {
+                    out.push_str(&format!("  {kind} {file}:{line}\n"));
+                }
+                if !l.references.is_empty() {
+                    out.push_str(&format!("Referenced in {} file(s):\n", l.references.len()));
+                    for f in l.references.iter().take(30) {
+                        out.push_str(&format!("  {f}\n"));
+                    }
+                }
+                return Ok(ToolResult {
+                    title: format!(
+                        "{name} — {} def, {} refs (lsp)",
+                        l.definitions.len(),
+                        l.references.len()
+                    ),
+                    output: out,
+                    metadata: json!({ "definitions": l.definitions, "references": l.references, "source": "lsp" }),
+                    attachments: Vec::new(),
+                });
+            }
             out.push_str(&format!(
-                "No definition of `{name}` in the index (Rust/Python/JS/TS/Go files). Try grep.\n"
+                "No definition of `{name}` in the index (Rust, Python, JS/TS, Go, Java, C/C++, Ruby) or from a language server. Try grep.\n"
             ));
         } else {
             out.push_str(&format!("Definitions of `{name}`:\n"));

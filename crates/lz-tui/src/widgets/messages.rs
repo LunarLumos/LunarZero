@@ -121,6 +121,12 @@ impl RenderCache {
                             }
                             PartKind::Text {
                                 metadata: Some(md), ..
+                            } if md["background_result"].is_object() => {
+                                let d = md["background_result"]["description"].as_str().unwrap_or("task");
+                                Some(format!("↻ background task finished: {d}"))
+                            }
+                            PartKind::Text {
+                                metadata: Some(md), ..
                             } if md["heal"].is_object() => {
                                 let h = &md["heal"];
                                 let cmd = h["command"].as_str().unwrap_or("command");

@@ -155,6 +155,17 @@ class H(BaseHTTPRequestHandler):
                 after = [m for m in msgs[idx:] if m["role"] == "tool"]
                 if len(after) == 0: call("write", {"filePath": "src/export.rs", "content": good}, cid="call_fix")
                 else: text("LSP-HEALED: " + tool_results[-1]["content"][:120].replace("\n", " / "))
+        elif "symbol_lookup" in all_user:
+            name = user_text.split("symbol_lookup", 1)[1].strip().split()[0] if user_text.strip().split()[-1] != "symbol_lookup" else "render"
+            if step == 0: call("symbol", {"name": name})
+            else: text("SYMBOL: " + tool_results[-1]["content"][:500].replace("\n", " / "))
+        elif "scenario_child" in user_text:
+            text("CHILD DONE 42")
+        elif "Background task" in user_text:
+            text("PARENT GOT: " + user_text.replace("\n", " / ")[:200])
+        elif "scenario_bg" in all_user:
+            if step == 0: call("task", {"description": "count things", "prompt": "scenario_child count", "subagent_type": "general", "background": True})
+            else: text("Started the background task; carrying on.")
         elif "scenario2" in user_text:
             if step == 0: call("bash", {"command": "rm -rf never"})
             else: text("Result: " + tool_results[-1]["content"][:120].replace("\n", " / "))

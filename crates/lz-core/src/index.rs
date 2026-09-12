@@ -75,6 +75,10 @@ enum Lang {
     TypeScript,
     Tsx,
     Go,
+    Java,
+    C,
+    Cpp,
+    Ruby,
 }
 
 fn lang_of(path: &Path) -> Option<Lang> {
@@ -85,6 +89,10 @@ fn lang_of(path: &Path) -> Option<Lang> {
         "ts" | "mts" | "cts" => Some(Lang::TypeScript),
         "tsx" => Some(Lang::Tsx),
         "go" => Some(Lang::Go),
+        "java" => Some(Lang::Java),
+        "c" | "h" => Some(Lang::C),
+        "cc" | "cpp" | "cxx" | "hpp" | "hh" | "hxx" => Some(Lang::Cpp),
+        "rb" | "rake" => Some(Lang::Ruby),
         _ => None,
     }
 }
@@ -97,6 +105,10 @@ fn language(lang: Lang) -> Language {
         Lang::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         Lang::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         Lang::Go => tree_sitter_go::LANGUAGE.into(),
+        Lang::Java => tree_sitter_java::LANGUAGE.into(),
+        Lang::C => tree_sitter_c::LANGUAGE.into(),
+        Lang::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Lang::Ruby => tree_sitter_ruby::LANGUAGE.into(),
     }
 }
 
@@ -138,8 +150,57 @@ fn definition_kind(lang: Lang, node: &Node) -> Option<(&'static str, &'static st
             "type_spec" => ("type", "name"),
             _ => return None,
         },
+        Lang::Java => match k {
+            "class_declaration" => ("class", "name"),
+            "interface_declaration" => ("interface", "name"),
+            "enum_declaration" => ("enum", "name"),
+            "record_declaration" => ("class", "name"),
+            "method_declaration" | "constructor_declaration" => ("method", "name"),
+            _ => return None,
+        },
+        Lang::C | Lang::Cpp => match k {
+            "function_definition" => ("fn", "declarator"),
+            "struct_specifier" => ("struct", "name"),
+            "union_specifier" => ("struct", "name"),
+            "enum_specifier" => ("enum", "name"),
+            "class_specifier" => ("class", "name"),
+            "namespace_definition" => ("mod", "name"),
+            "type_definition" => ("type", "declarator"),
+            _ => return None,
+        },
+        Lang::Ruby => match k {
+            "method" | "singleton_method" => ("method", "name"),
+            "class" => ("class", "name"),
+            "module" => ("mod", "name"),
+            _ => return None,
+        },
     };
     Some(hit)
+}
+
+/// C/C++ put the name inside a declarator tree (`*name(args)`): dig for it.
+fn declarator_name<'a>(node: &Node, src: &'a [u8]) -> Option<&'a str> {
+    if matches!(
+        node.kind(),
+        "identifier"
+            | "field_identifier"
+            | "type_identifier"
+            | "qualified_identifier"
+            | "destructor_name"
+            | "operator_name"
+    ) {
+        return Some(node_text(node, src));
+    }
+    if let Some(d) = node.child_by_field_name("declarator") {
+        return declarator_name(&d, src);
+    }
+    let mut c = node.walk();
+    for child in node.children(&mut c) {
+        if let Some(n) = declarator_name(&child, src) {
+            return Some(n);
+        }
+    }
+    None
 }
 
 fn is_identifier(kind: &str) -> bool {
@@ -150,6 +211,7 @@ fn is_identifier(kind: &str) -> bool {
             | "field_identifier"
             | "property_identifier"
             | "shorthand_property_identifier"
+            | "constant"
     )
 }
 
@@ -191,7 +253,11 @@ fn parse_file(lang: Lang, rel: &str, src: &[u8]) -> (Vec<Symbol>, Vec<String>) {
         if let Some((kind, field)) = definition_kind(lang, &node)
             && let Some(name_node) = node.child_by_field_name(field)
         {
-            let name = node_text(&name_node, src).trim().to_string();
+            let name = if field == "declarator" {
+                declarator_name(&name_node, src).unwrap_or("").trim().to_string()
+            } else {
+                node_text(&name_node, src).trim().to_string()
+            };
             // JS `const x = 1` is noise; keep declarators that hold a function/class
             let keep = if node.kind() == "variable_declarator" {
                 node.child_by_field_name("value").is_some_and(|v| {
@@ -255,6 +321,18 @@ fn body_field(lang: Lang, node: &Node) -> Option<&'static str> {
         Lang::Go => match k {
             "function_declaration" | "method_declaration" => "body",
             "func_literal" => "body",
+            _ => return None,
+        },
+        Lang::Java => match k {
+            "method_declaration" | "constructor_declaration" => "body",
+            _ => return None,
+        },
+        Lang::C | Lang::Cpp => match k {
+            "function_definition" => "body",
+            _ => return None,
+        },
+        Lang::Ruby => match k {
+            "method" | "singleton_method" => "body",
             _ => return None,
         },
     };
@@ -671,6 +749,56 @@ mod tests {
             "{sk}"
         );
         assert!(!sk.contains("y = x + 1"));
+    }
+
+    #[test]
+    fn extracts_java_c_cpp_ruby() {
+        let java = b"public class Repo {\n  private int n;\n  public User find(String id) {\n    return null;\n  }\n}\ninterface Store {}\n";
+        let (syms, _) = parse_file(Lang::Java, "Repo.java", java);
+        let names: Vec<(&str, &str)> = syms.iter().map(|s| (s.kind.as_str(), s.name.as_str())).collect();
+        assert!(
+            names.contains(&("class", "Repo"))
+                && names.contains(&("method", "find"))
+                && names.contains(&("interface", "Store")),
+            "{names:?}"
+        );
+        let c = b"struct point { int x; };\nstatic int add(int a, int b) {\n  return a + b;\n}\ntypedef struct point point_t;\n";
+        let (syms, _) = parse_file(Lang::C, "p.c", c);
+        let names: Vec<(&str, &str)> = syms.iter().map(|s| (s.kind.as_str(), s.name.as_str())).collect();
+        assert!(
+            names.contains(&("struct", "point")) && names.contains(&("fn", "add")),
+            "{names:?}"
+        );
+        let cpp = b"namespace geo {\nclass Shape {\n public:\n  virtual double area() const;\n};\ndouble Shape::area() const { return 0; }\n}\n";
+        let (syms, _) = parse_file(Lang::Cpp, "s.cpp", cpp);
+        let names: Vec<(&str, &str)> = syms.iter().map(|s| (s.kind.as_str(), s.name.as_str())).collect();
+        assert!(
+            names.contains(&("mod", "geo")) && names.contains(&("class", "Shape")),
+            "{names:?}"
+        );
+        assert!(
+            names.iter().any(|(k, n)| *k == "fn" && n.contains("area")),
+            "{names:?}"
+        );
+        let rb = b"module Billing\n  class Invoice\n    def total\n      t = 0\n      lines.each { |l| t += l }\n      t\n    end\n    def self.build(x)\n      new\n    end\n  end\nend\n";
+        let (syms, _) = parse_file(Lang::Ruby, "i.rb", rb);
+        let names: Vec<(&str, &str)> = syms.iter().map(|s| (s.kind.as_str(), s.name.as_str())).collect();
+        assert!(
+            names.contains(&("mod", "Billing"))
+                && names.contains(&("class", "Invoice"))
+                && names.contains(&("method", "total"))
+                && names.contains(&("method", "build")),
+            "{names:?}"
+        );
+        let sk = skeleton(Path::new("p.c"), std::str::from_utf8(c).unwrap()).unwrap();
+        assert!(
+            sk.contains("static int add(int a, int b) { … } // 2 lines"),
+            "{sk}"
+        );
+        assert!(sk.contains("struct point { int x; };"));
+        let sk = skeleton(Path::new("i.rb"), std::str::from_utf8(rb).unwrap()).unwrap();
+        assert!(sk.contains("def total"), "{sk}");
+        assert!(!sk.contains("lines.each"), "{sk}");
     }
 
     #[test]

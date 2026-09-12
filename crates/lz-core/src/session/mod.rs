@@ -13,6 +13,7 @@ pub mod shell;
 pub mod status;
 pub mod subtask;
 pub mod system;
+pub mod test_report;
 
 use std::sync::Arc;
 

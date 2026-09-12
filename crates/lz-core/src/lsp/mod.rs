@@ -178,7 +178,7 @@ impl ClientState {
                     "synchronization": { "dynamicRegistration": false, "didSave": true },
                     "publishDiagnostics": { "relatedInformation": true, "versionSupport": true }
                 },
-                "workspace": { "workspaceFolders": true, "didChangeWatchedFiles": { "dynamicRegistration": false } },
+                "workspace": { "workspaceFolders": true, "didChangeWatchedFiles": { "dynamicRegistration": false }, "symbol": { "dynamicRegistration": false } },
                 // without this, servers never report load/index progress and an
                 // empty diagnostics set would be indistinguishable from "still loading"
                 "window": { "workDoneProgress": true }
@@ -367,6 +367,14 @@ impl ClientState {
     }
 }
 
+/// `symbol` tool fallback data from a language server.
+pub struct LspLookup {
+    pub server: String,
+    /// (worktree-relative file, 1-based line, kind)
+    pub definitions: Vec<(String, u32, String)>,
+    pub references: Vec<String>,
+}
+
 #[derive(Default)]
 pub struct LspManager {
     clients: RwLock<BTreeMap<(String, PathBuf), Arc<ClientState>>>,
@@ -415,6 +423,151 @@ impl LspManager {
                 None
             }
         }
+    }
+
+    /// A server for the worktree's main language when none is running yet:
+    /// picked by root markers (Cargo.toml → rust-analyzer, go.mod → gopls, …).
+    async fn any_client(&self, worktree: &Path) -> Option<Arc<ClientState>> {
+        if let Some(c) = self.clients.read().await.values().next() {
+            return Some(c.clone());
+        }
+        if !self.enabled {
+            return None;
+        }
+        for def in servers::SERVERS {
+            let marked = def.root_markers.iter().any(|m| worktree.join(m).exists());
+            if marked && servers::on_path(def.command[0]) {
+                // a representative path of the right extension inside the tree
+                let probe = worktree.join(format!("__lz_probe__.{}", def.extensions[0]));
+                return self.client_for(&probe, worktree).await;
+            }
+        }
+        None
+    }
+
+    /// Definitions of `name` via `workspace/symbol`, and the files that
+    /// reference the first one via `textDocument/references`.
+    pub async fn lookup(&self, name: &str, worktree: &Path) -> Option<LspLookup> {
+        let c = self.any_client(worktree).await?;
+        let ready = c.wait_ready(READY_WAIT).await;
+        tracing::debug!(server = c.def.id, ready, "lsp lookup {name}");
+        // a freshly started server answers with nothing until its symbol index
+        // exists; retry for a few seconds before concluding "unknown"
+        let queries: Vec<String> = if c.def.id == "rust" {
+            // rust-analyzer searches dependencies only when the query ends with `#`
+            vec![name.to_string(), format!("{name}#")]
+        } else {
+            vec![name.to_string()]
+        };
+        let mut r = Value::Null;
+        'outer: for attempt in 0..8 {
+            for q in &queries {
+                match tokio::time::timeout(
+                    Duration::from_secs(10),
+                    c.rpc.request("workspace/symbol", json!({ "query": q })),
+                )
+                .await
+                {
+                    Ok(Ok(v)) if v.as_array().is_some_and(|a| !a.is_empty()) => {
+                        r = v;
+                        break 'outer;
+                    }
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => tracing::debug!("workspace/symbol failed: {e}"),
+                    Err(_) => {
+                        tracing::debug!("workspace/symbol timed out");
+                        return None;
+                    }
+                }
+            }
+            if attempt < 7 {
+                tokio::time::sleep(Duration::from_millis(750)).await;
+            }
+        }
+        tracing::debug!(
+            "workspace/symbol: {} result(s)",
+            r.as_array().map(Vec::len).unwrap_or(0)
+        );
+        let items = r.as_array()?;
+        let mut defs: Vec<(String, u32, String)> = Vec::new();
+        for it in items {
+            let sym_name = it["name"].as_str().unwrap_or("");
+            // servers fuzzy-match: keep exact (case-insensitive) hits first
+            if !sym_name.eq_ignore_ascii_case(name)
+                && !sym_name.ends_with(&format!("::{name}"))
+                && !sym_name.ends_with(&format!(".{name}"))
+            {
+                continue;
+            }
+            let loc = &it["location"];
+            let Some(path) = loc["uri"].as_str().and_then(path_from_uri) else {
+                continue;
+            };
+            let line = loc["range"]["start"]["line"].as_u64().unwrap_or(0) as u32;
+            let kind = match it["kind"].as_u64().unwrap_or(0) {
+                2 => "mod",
+                3 => "namespace",
+                7 => "property",
+                9 => "constructor",
+                22 => "variant",
+                5 => "class",
+                6 => "method",
+                8 => "field",
+                10 => "enum",
+                11 => "interface",
+                12 => "fn",
+                13 => "variable",
+                14 => "const",
+                23 => "struct",
+                26 => "type",
+                _ => "symbol",
+            };
+            let rel = path.strip_prefix(worktree).unwrap_or(&path).display().to_string();
+            defs.push((rel, line + 1, kind.to_string()));
+            if defs.len() >= 8 {
+                break;
+            }
+        }
+        if defs.is_empty() {
+            return None;
+        }
+        // references of the first definition
+        let mut refs: Vec<String> = Vec::new();
+        if let Some((rel, line, _)) = defs.first() {
+            let path = worktree.join(rel);
+            let _ = c.touch(&path).await;
+            let character = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| {
+                    t.lines()
+                        .nth((*line - 1) as usize)
+                        .map(|l| l.find(name).unwrap_or(0))
+                })
+                .unwrap_or(0);
+            if let Ok(Ok(r)) = tokio::time::timeout(
+                Duration::from_secs(10),
+                c.rpc.request(
+                    "textDocument/references",
+                    json!({ "textDocument": { "uri": uri(&path) }, "position": { "line": line - 1, "character": character },
+                            "context": { "includeDeclaration": false } }),
+                ),
+            )
+            .await
+            {
+                for loc in r.as_array().into_iter().flatten() {
+                    if let Some(p) = loc["uri"].as_str().and_then(path_from_uri) {
+                        refs.push(p.strip_prefix(worktree).unwrap_or(&p).display().to_string());
+                    }
+                }
+            }
+        }
+        refs.sort();
+        refs.dedup();
+        Some(LspLookup {
+            server: c.def.name.to_string(),
+            definitions: defs,
+            references: refs,
+        })
     }
 
     /// Open/update the file; used by `read` to warm servers up.

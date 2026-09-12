@@ -39,6 +39,8 @@ struct RunHandle {
 #[derive(Default)]
 pub struct SessionRunner {
     running: DashMap<String, RunHandle>,
+    /// parent session → background child sessions started by `task`
+    background: DashMap<String, Vec<String>>,
 }
 
 /// Context is full when the last step's total tokens
@@ -69,7 +71,30 @@ impl SessionRunner {
         self.running.get(session_id).is_some_and(|h| !*h.done.borrow())
     }
 
+    /// Remember a background child so aborting the parent aborts it too.
+    pub fn track_background(&self, parent: &str, child: &str) {
+        self.background
+            .entry(parent.to_string())
+            .or_default()
+            .push(child.to_string());
+    }
+
+    pub fn background_of(&self, parent: &str) -> Vec<String> {
+        self.background.get(parent).map(|v| v.clone()).unwrap_or_default()
+    }
+
     pub async fn abort(&self, session_id: &str) {
+        // background children of an aborted session must not keep working
+        let children = self
+            .background
+            .remove(session_id)
+            .map(|(_, v)| v)
+            .unwrap_or_default();
+        for c in children {
+            if let Some(h) = self.running.get(&c) {
+                h.cancel.cancel();
+            }
+        }
         if let Some(h) = self.running.get(session_id) {
             h.cancel.cancel();
             let mut done = h.done.clone();
@@ -1219,8 +1244,11 @@ async fn push_heal_nudge(
             fail.command, fail.exit
         )
     } else {
+        let parsed = super::test_report::summarize(&fail.command, &fail.output)
+            .map(|s| format!("{s}\n"))
+            .unwrap_or_default();
         format!(
-            "`{}` exited with status {} (repair round {round} of {max}):\n```\n{tail}\n```\nFix these errors now — read the files they point at, correct them, and run the same command again until it passes. \
+            "`{}` exited with status {} (repair round {round} of {max}):\n{parsed}```\n{tail}\n```\nFix these errors now — read the files they point at, correct them, and run the same command again until it passes. \
              If the failure is caused by something outside the code (missing tool, no network, a service that is down), say so in one line instead of retrying.",
             fail.command, fail.exit
         )
