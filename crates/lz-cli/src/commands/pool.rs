@@ -298,7 +298,7 @@ async fn report() -> anyhow::Result<i32> {
         cooling += (u.cooldown_secs > 0) as usize;
         rows.push((format!("{}/{}", u.provider, u.model), u.rpd_used, u.tpd_used, usd));
     }
-    rows.sort_by(|a, b| b.2.cmp(&a.2));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.2));
     println!(
         "last 24 h — {} requests · {} tokens · {} model(s) used",
         reqs,
