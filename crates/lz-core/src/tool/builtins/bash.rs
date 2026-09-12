@@ -750,6 +750,7 @@ impl Tool for BashTool {
     }
 }
 
+#[cfg_attr(not(unix), allow(unused_variables))]
 async fn kill_group(pid: Option<u32>, child: &mut tokio::process::Child) {
     #[cfg(unix)]
     {

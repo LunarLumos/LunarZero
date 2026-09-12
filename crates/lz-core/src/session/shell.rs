@@ -151,6 +151,7 @@ pub async fn run(
     let mut aborted = false;
     match cmd.spawn() {
         Ok(mut child) => {
+            #[cfg_attr(not(unix), allow(unused_variables))]
             let pid = child.id();
             let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(64);
             for stream in [
