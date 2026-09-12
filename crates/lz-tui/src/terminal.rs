@@ -1,7 +1,9 @@
 //! Terminal setup/teardown, background-color detection (OSC 11), notifications
 //! and window title.
 
-use std::io::{Read, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::Write;
 use std::time::Duration;
 
 use crossterm::execute;
@@ -162,6 +164,7 @@ pub fn query_colors(timeout: Duration) -> (Option<Rgba>, Option<Rgba>) {
     (parse_osc(&s, 11), parse_osc(&s, 10))
 }
 
+#[cfg(unix)]
 fn parse_osc(s: &str, code: u8) -> Option<Rgba> {
     let key = format!("]{code};");
     let i = s.find(&key)? + key.len();
@@ -211,7 +214,9 @@ pub fn detect_mode(bg: Option<Rgba>) -> Mode {
     Mode::Dark
 }
 
+#[cfg(unix)]
 struct RawGuard(bool);
+#[cfg(unix)]
 impl RawGuard {
     fn new() -> std::io::Result<RawGuard> {
         let was = crossterm::terminal::is_raw_mode_enabled()?;
@@ -221,6 +226,7 @@ impl RawGuard {
         Ok(RawGuard(was))
     }
 }
+#[cfg(unix)]
 impl Drop for RawGuard {
     fn drop(&mut self) {
         if !self.0 {
